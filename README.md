@@ -1,0 +1,76 @@
+# Skyline QR
+
+A link becomes a 3D city that folds flat into its own scannable QR code. Every building stands on a
+QR module, so the skyline and the code are the same grid: tap the city and it settles into the code,
+tap again and it rises back up.
+
+Kotlin, Jetpack Compose, and WebGPU with WGSL shaders through
+[androidx.webgpu](https://developer.android.com/jetpack/androidx/releases/webgpu) (alpha). Where
+WebGPU cannot start, a flat 2D code takes its place, so the link always scans.
+
+> Early work in progress. See [docs/DESIGN.md](docs/DESIGN.md) for where this is going.
+
+## Get it
+
+- **The app**: the signed APK is on the [releases page](https://github.com/skylightlim/skyline-qr/releases/latest)
+  (Android 8.0+, a phone with Vulkan).
+- **The library**, through [JitPack](https://jitpack.io/#skylightlim/skyline-qr):
+
+  ```kotlin
+  // settings.gradle.kts
+  dependencyResolutionManagement { repositories { maven("https://jitpack.io") } }
+  // build.gradle.kts
+  implementation("com.github.skylightlim.skyline-qr:skylineqr-compose:v1.0.0")
+  ```
+
+## Modules
+
+| Module | What it is |
+| --- | --- |
+| `skylineqr-core` | Pure Kotlin. Link parsing, identity, the QR matrix and the city planner. |
+| `skylineqr-compose` | The renderer and the `SkylineQrCode` composable. Brings the core along. |
+| `app` | The demo app. |
+
+```kotlin
+SkylineQrCode(
+  url = "https://example.com",
+  modifier = Modifier.fillMaxSize(),
+  city = CityPreset.KUALA_LUMPUR,  // the default: three landmarks and the monorail; or GENERIC
+  time = TimeOfDay.AUTO,      // follows the phone's clock; or DAWN, DAY, DUSK, NIGHT
+  weather = Weather.CLEAR,    // or RAIN, HAZE, STORM
+)
+```
+
+Tap to fold the city into its code and back. In the city, drag to turn it, pinch to zoom,
+double-tap to put the camera back, and long-press to bring a meteor down (it rebuilds itself). Time
+and weather only light the city; they never change it. `onEvent` reports lightning and meteors, so
+an app can add sound; the demo does, with CC0 recordings.
+
+Share links (`https://skylightlim.github.io/city/?c=…`) open the exact city in the app, or a page
+with its plain QR code where the app is not installed.
+
+The same link always builds the same city. By default every page on one site shares a city while
+each QR still points at its own page; pass `identityScope = IdentityScope.URL` to give every page
+its own. A city you save or share should record `GeneratorVersion.CURRENT` and pass it back as
+`generatorVersion`, so it never changes when the generator improves.
+
+## Building
+
+```bash
+./gradlew test assembleDebug
+./gradlew :skylineqr-compose:connectedDebugAndroidTest   # on a connected phone
+```
+
+The device tests render real WebGPU frames, read them back and scan them with ZXing. Needs JDK 17+
+and the Android SDK (compileSdk 36). minSdk is 26.
+
+## Credits
+
+Inspired by [Every QR Code](https://github.com/AlbertAZ1992/every-qrcode) (MIT; its link parsing and
+versioning are adapted here), Enzo Manuel Mangano's
+[Cherry Blossom QR Code](https://reactiive.io/demos/cherry-blossom-qrcode) (idea only) and
+[ICQR Magic Tree](https://tree.icqr.com). Details in [NOTICE](NOTICE).
+
+## License
+
+[MIT](LICENSE)

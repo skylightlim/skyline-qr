@@ -1,0 +1,5 @@
+# JitPack builds the two library modules from a tag: com.github.skylightlim.skyline-qr:skylineqr-compose:<tag>
+jdk:
+  - openjdk17
+install:
+  - ./gradlew :skylineqr-core:publishToMavenLocal :skylineqr-compose:publishToMavenLocal

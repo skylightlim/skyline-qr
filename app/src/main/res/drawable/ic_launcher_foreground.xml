@@ -1,0 +1,25 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- A small skyline: dark modules standing on the plate. -->
+    <path
+        android:pathData="M20,80h68v5h-68z"
+        android:fillColor="#1E2534" />
+    <path
+        android:pathData="M24,80h8v-26h-8z"
+        android:fillColor="#E9E4D6" />
+    <path
+        android:pathData="M36,80h11v-44h-11z"
+        android:fillColor="#D6DEE9" />
+    <path
+        android:pathData="M51,80h9v-58h-9z"
+        android:fillColor="#FFCF73" />
+    <path
+        android:pathData="M64,80h11v-34h-11z"
+        android:fillColor="#D6DEE9" />
+    <path
+        android:pathData="M79,80h8v-20h-8z"
+        android:fillColor="#E9E4D6" />
+</vector>

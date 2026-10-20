@@ -1,0 +1,97 @@
+SkylineQR
+Copyright (c) 2026 Lim Chen Yu (skylightlim). MIT License, see LICENSE.
+
+------------------------------------------------------------------------------
+Adapted code
+------------------------------------------------------------------------------
+
+skylineqr-core adapts parts of Every QR Code
+(https://github.com/AlbertAZ1992/every-qrcode): link parsing and identity
+scopes (core/Link.kt, from packages/core/src/url.ts), its test cases
+(LinkTest.kt, from url.test.ts) and the generator-version scheme
+(core/GeneratorVersion.kt), and its QR role map (core/QrRoles.kt, from
+packages/core/src/qr-roles.ts). skylineqr-compose adapts its morph's reversal timing,
+a duration scaled by the distance left (render/Morph.kt, from
+packages/renderer-webgpu/src/renderer.ts).
+Every QR Code is distributed under this licence:
+
+  MIT License
+
+  Copyright (c) 2026 Every QR Code contributors
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in
+  all copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+  SOFTWARE.
+
+------------------------------------------------------------------------------
+Icons (app/src/main/kotlin/com/skylightlim/skylineqr/ui/Icons.kt)
+------------------------------------------------------------------------------
+
+The panel's icons are path data from Lucide 0.460 (https://lucide.dev): clock-3,
+sun, moon, cloud-rain, haze, cloud-lightning, volume-2, volume-x, share, info and
+chevron-down. Lucide is distributed under this licence:
+
+  ISC License
+
+  Copyright (c) for portions of Lucide are held by Cole Bemis 2013-2022 as part
+  of Feather (MIT). All other copyright (c) for Lucide are held by Lucide
+  Contributors 2022.
+
+  Permission to use, copy, modify, and/or distribute this software for any
+  purpose with or without fee is hereby granted, provided that the above
+  copyright notice and this permission notice appear in all copies.
+
+  THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+  WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+  MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY
+  SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER
+  RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF
+  CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
+  CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+------------------------------------------------------------------------------
+Sounds (app/src/main/res/raw), all CC0 1.0 from OpenGameArt.org
+------------------------------------------------------------------------------
+
+No attribution is required; it is given anyway. Each was trimmed, filtered,
+loudness-normalised and, for the loops, crossfaded end into start.
+
+- day_traffic.ogg: "High traffic road sounds" by IgnasD
+  https://opengameart.org/content/high-traffic-road-sounds
+- night_insects.ogg: "Crickets Ambient Noise - loopable" by Wolfgang_
+  https://opengameart.org/content/crickets-ambient-noise-loopable
+- rain.ogg: "Rain (loopable)" by Ylmir
+  https://opengameart.org/content/rain-loopable
+- thunder.ogg and meteor_whoosh.ogg: "100 CC0 SFX #2" by rubberduck
+  https://opengameart.org/content/100-cc0-sfx-2
+- meteor_impact.ogg: "Chunky Explosion" by Joth
+  https://opengameart.org/content/chunky-explosion
+
+------------------------------------------------------------------------------
+Inspiration (ideas only, no code)
+------------------------------------------------------------------------------
+
+- Cherry Blossom QR Code by Enzo Manuel Mangano
+  (https://reactiive.io/demos/cherry-blossom-qrcode). Its source is under a
+  proprietary licence that forbids redistribution and porting, so none of it
+  is used here: only the published idea of a QR that folds out of a scene.
+- ICQR Magic Tree (https://tree.icqr.com).
+- "PNB 118" by Henryer Robinson
+  (https://sketchfab.com/3d-models/pnb-118-1669baef4fa1408d958626ee24b6ef48), CC BY 4.0: a
+  visual reference for the supertall's shape. None of its geometry is used; the supertall is
+  built from boxes in code (city/KualaLumpur.kt).
+- Every QR Code, as above.
