@@ -6,11 +6,16 @@ package com.skylightlim.skylineqr.city
  */
 class MaterialRecipe(
   val name: String,
-  /** Four families as rgb triples; each tower takes one. */
+  /** Four families as rgb triples: the traffic's undercoat, and a generic city's districts. */
   val families: FloatArray,
   val vehicle: FloatArray,
-  /** Eight landmark colours as rgb triples, for a preset that has landmarks. */
-  val landmarks: FloatArray = FloatArray(24),
+  /** Thirty-two landmark colours as rgb triples, for a preset that has landmarks. */
+  val landmarks: FloatArray = FloatArray(96),
+  /**
+   * The districts' colours as rgb triples, at most eight: each district's towers are built of its
+   * colour, and its modules in the flat code inked in it (see [FlatColours]).
+   */
+  val districts: FloatArray = families,
 )
 
 /**

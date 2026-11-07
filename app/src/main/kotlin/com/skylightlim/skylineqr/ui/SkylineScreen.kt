@@ -1,10 +1,11 @@
+@file:OptIn(ExperimentalMaterial3ExpressiveApi::class)
+
 package com.skylightlim.skylineqr.ui
 
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
-import android.graphics.Bitmap
-import android.net.Uri
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -13,50 +14,31 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.core.content.FileProvider
 import androidx.core.view.WindowCompat
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.skylightlim.skylineqr.city.Atmospheres
 import com.skylightlim.skylineqr.city.CityPreset
 import com.skylightlim.skylineqr.city.TimeOfDay
@@ -65,34 +47,54 @@ import com.skylightlim.skylineqr.compose.SkylineQrCode
 import com.skylightlim.skylineqr.compose.rememberSkylineQrState
 import com.skylightlim.skylineqr.core.GeneratorVersion
 import com.skylightlim.skylineqr.core.IdentityScope
+import com.skylightlim.skylineqr.core.PaymentCode
 import com.skylightlim.skylineqr.core.ShareLink
 import com.skylightlim.skylineqr.core.SharedCity
+import com.skylightlim.skylineqr.nfc.card.Card
+import com.skylightlim.skylineqr.nfc.card.CardContent
 import com.skylightlim.skylineqr.theme.SkylineQRTheme
-import java.io.File
-import java.io.FileOutputStream
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
-private const val DEFAULT_URL = "https://github.com/skylightlim/skyline-qr"
+private const val DEFAULT_URL = "https://www.instagram.com/chenyuulim/"
 
-/** The demo. [shared] is a city someone sent as a share link, opened in the app. */
+/**
+ * The city. [shared] is a city someone sent as a share link, opened in the app. [cards] are the
+ * saved cards, whose links the picker offers as the city (2026-11-07: it replaced the link field;
+ * the profile's link comes first; [onRemove] takes a card off it). [onAdd] is the new-card button under share, and [popup] the card
+ * popup it opens, drawn in the panel's colours. [onShow] hears which link the city shows, to share it by tap all the time. [sharing] is the title of a card shared for a while by
+ * tap, which the hint shows with a way to stop. [snackbar] speaks at the top of the panel, covering
+ * none of it.
+ */
 @Composable
-fun SkylineScreen(shared: SharedCity? = null) {
+fun SkylineScreen(
+  shared: SharedCity? = null,
+  cards: List<Card> = emptyList(),
+  sharing: String? = null,
+  onStopSharing: () -> Unit = {},
+  onRemove: (Card) -> Unit = {},
+  onShow: (title: String, url: String) -> Unit = { _, _ -> },
+  onAdd: () -> Unit = {},
+  snackbar: SnackbarHostState = remember { SnackbarHostState() },
+  popup: @Composable () -> Unit = {},
+) {
   val context = LocalContext.current
-  val focusManager = LocalFocusManager.current
-  val scope = rememberCoroutineScope()
 
-  var url by rememberSaveable { mutableStateOf(DEFAULT_URL) }
-  // The city rebuilds a beat after typing stops, not on every keystroke.
-  var settledUrl by rememberSaveable { mutableStateOf(DEFAULT_URL) }
+  // The profile's link to begin with, and to go back to when the card shown is removed.
+  val profileUrl = cards.firstNotNullOfOrNull { (it.content as? CardContent.Link)?.url } ?: DEFAULT_URL
+  var url by rememberSaveable { mutableStateOf(profileUrl) }
   var time by rememberSaveable { mutableStateOf(TimeOfDay.AUTO) }
   var weather by rememberSaveable { mutableStateOf(Weather.CLEAR) }
+  // Whether the clouds show (2026-11-07): kept on the phone, since it is a setting, not a view.
+  val settings = remember(context) { context.getSharedPreferences(SETTINGS, Context.MODE_PRIVATE) }
+  var clouds by remember { mutableStateOf(settings.getBoolean(CLOUDS, true)) }
+  // Where a long press on a cloud, the sun or the moon opened the clouds' menu; null while closed.
+  var skyMenu by remember { mutableStateOf<Offset?>(null) }
   // A shared city keeps the recipe and the scope it was made with.
   var generatorVersion by rememberSaveable { mutableIntStateOf(GeneratorVersion.CURRENT) }
   var identityScope by rememberSaveable { mutableStateOf(IdentityScope.SITE) }
   val qr = rememberSkylineQrState()
+  // Only whether the camera has moved, so a drag doesn't redraw the panel on every frame.
+  val cameraMoved by remember(qr) { derivedStateOf { qr.cameraMoved } }
 
   // Open each share link once; rotating the phone must not undo what was changed since.
   var opened by rememberSaveable { mutableStateOf<String?>(null) }
@@ -102,21 +104,25 @@ fun SkylineScreen(shared: SharedCity? = null) {
     if (link == opened) return@LaunchedEffect
     opened = link
     url = city.url
-    settledUrl = city.url
     time = city.time
     weather = city.weather
     generatorVersion = city.generatorVersion
     identityScope = city.scope
     qr.flat = false
   }
-  // Typing a new link starts a new city, made with today's recipe.
-  LaunchedEffect(settledUrl) {
-    if (shared == null || settledUrl != shared.url) generatorVersion = GeneratorVersion.CURRENT
+  // The link the city shows is the one the phone hands over by tap. A payment code's city
+  // (2026-11-07) hands over the profile instead: payment apps don't take a code by tap, and it has
+  // no share link either.
+  val paying = PaymentCode.isPaymentCode(url)
+  val shownTitle = cards.firstOrNull { it.city() == url }?.title ?: url
+  val profileTitle = cards.firstOrNull { it.isProfile }?.title ?: profileUrl
+  LaunchedEffect(url, shownTitle, paying, profileUrl, profileTitle) {
+    if (paying) onShow(profileTitle, profileUrl) else onShow(shownTitle, url)
   }
 
+  // Another link starts a new city, made with today's recipe.
   LaunchedEffect(url) {
-    delay(200)
-    settledUrl = url
+    if (shared == null || url != shared.url) generatorVersion = GeneratorVersion.CURRENT
   }
 
   // The panel takes its tint from the sky it sits under; on Auto the sky follows the clock.
@@ -129,31 +135,6 @@ fun SkylineScreen(shared: SharedCity? = null) {
   }
   val air = Atmospheres.at(time, weather, clock)
 
-  // Sound is off until asked for, and pauses whenever the app is not on screen.
-  var muted by rememberSaveable { mutableStateOf(true) }
-  val sound = remember { CitySound(context) }
-  val lifecycle = LocalLifecycleOwner.current.lifecycle
-  DisposableEffect(lifecycle) {
-    val observer = LifecycleEventObserver { _, event ->
-      when (event) {
-        Lifecycle.Event.ON_START -> sound.foreground(true)
-        Lifecycle.Event.ON_STOP -> sound.foreground(false)
-        else -> {}
-      }
-    }
-    lifecycle.addObserver(observer)
-    onDispose {
-      lifecycle.removeObserver(observer)
-      sound.close()
-    }
-  }
-  // Read here, not only inside the button's label, so a toggle recomposes this scope and runs the
-  // effect below.
-  val silent = muted
-  SideEffect {
-    sound.muted = silent
-    sound.mix(air)
-  }
   val darkPanel = air.night > 0.5f || weather == Weather.STORM
   val sky = Color(air.skyHorizon[0], air.skyHorizon[1], air.skyHorizon[2])
   // Status bar icons sit on the backdrop in the city, and on the deeper surround in the flat code.
@@ -165,12 +146,9 @@ fun SkylineScreen(shared: SharedCity? = null) {
     WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = lightBehindBars
   }
 
-  var licences by remember { mutableStateOf(false) }
-  if (licences) Licences(onDismiss = { licences = false })
-
   Box(Modifier.fillMaxSize().background(Color.Black)) {
     SkylineQrCode(
-      url = settledUrl,
+      url = url,
       city = CityPreset.KUALA_LUMPUR,
       time = time,
       weather = weather,
@@ -178,136 +156,105 @@ fun SkylineScreen(shared: SharedCity? = null) {
       generatorVersion = generatorVersion,
       state = qr,
       modifier = Modifier.fillMaxSize(),
-      onEvent = sound::play,
+      billboard = BILLBOARD,
+      clouds = clouds,
+      onSkyLongPress = { _, at -> skyMenu = at },
     )
 
-    SkylineQRTheme(dark = darkPanel) {
-      val fill = frost(sky, darkPanel)
-      val onSky = if (lightBehindBars) Color(0xFF1C1F26) else Color(0xFFF1F3F8)
-      TopBar(code = qr.identity?.code, onSky = onSky, onInfo = { licences = true }, modifier = Modifier.align(Alignment.TopCenter))
+    SkylineQRTheme(dark = darkPanel, sky = sky) {
+      popup()
+      SkyMenu(
+        skyMenu,
+        clouds,
+        onClouds = {
+          clouds = it
+          settings.edit().putBoolean(CLOUDS, it).apply()
+        },
+        onDismiss = { skyMenu = null },
+      )
 
       Column(
         modifier =
           Modifier.align(Alignment.BottomCenter)
+            // A new hour or weather's colours spread out from the control that was touched.
+            .themeReveal(time to weather)
+            // A phone's width; on a tablet or a phone on its side the panel stays that wide, centred.
+            .widthIn(max = PanelWidth)
             .fillMaxWidth()
             .navigationBarsPadding()
-            .imePadding()
             .padding(horizontal = 16.dp, vertical = 12.dp)
-            // Taps between the controls clear the keyboard; they never reach the city behind.
-            .pointerInput(Unit) { detectTapGestures { focusManager.clearFocus() } },
+            // Taps between the controls never reach the city behind.
+            .pointerInput(Unit) { detectTapGestures {} },
         verticalArrangement = Arrangement.spacedBy(10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
       ) {
+        SnackbarHost(snackbar)
         val error = qr.error
+        // Once the camera has moved, the hint is the button that puts it back. It is not a
+        // double-tap on the city, so a single tap there never waits to see whether a second follows.
         HintPill(
-          text =
-            when {
-              error != null -> error.message.orEmpty()
-              qr.flat -> "Tap the code to see the city"
-              qr.cameraMoved -> "Double-tap to put the camera back"
-              else -> "Tap for the QR code · hold for a meteor"
-            },
-          error = error != null,
-          fill = fill,
+          when {
+            error != null -> Hint.Problem(error.message.orEmpty())
+            sharing != null -> Hint.Act("Stop sharing “$sharing”", SkylineIcons.Nfc, onStopSharing)
+            qr.flat -> Hint.Say("Tap the code to see the city")
+            cameraMoved -> Hint.Act("Put the camera back", SkylineIcons.Reset, qr::resetCamera)
+            else -> Hint.Say("Tap for the QR code · hold for a meteor")
+          }
         )
 
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-          OutlinedTextField(
-            value = url,
-            onValueChange = { url = it },
-            singleLine = true,
-            isError = error != null,
-            placeholder = { Text("Paste a link") },
-            shape = TileShape,
-            colors =
-              OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = fill,
-                unfocusedContainerColor = fill,
-                errorContainerColor = fill,
-                unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.28f),
-              ),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done),
-            keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+          CardPicker(
+            cards,
+            url,
+            onPick = {
+              url = it
+              identityScope = IdentityScope.SITE
+            },
+            onRemove = { card ->
+              if (card.city() == url) {
+                url = profileUrl
+                identityScope = IdentityScope.SITE
+              }
+              onRemove(card)
+            },
             modifier = Modifier.weight(1f),
           )
-          Box {
-            var menu by remember { mutableStateOf(false) }
-            TileButton(SkylineIcons.Share, "Share", fill, onClick = { menu = true }, size = FieldHeight, accent = true)
-            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-              DropdownMenuItem(
-                text = { Text("The code") },
-                onClick = {
-                  menu = false
-                  scope.launch {
-                    val bitmap = qr.snapshot() ?: return@launch
-                    shareImage(context, withContext(Dispatchers.IO) { saveShot(context, bitmap, "skyline-qr-code") })
-                  }
-                },
-              )
-              DropdownMenuItem(
-                text = { Text("A postcard of the city") },
-                enabled = !qr.flat,
-                onClick = {
-                  menu = false
-                  scope.launch {
-                    val city = qr.snapshot(flat = false) ?: return@launch
-                    val code = qr.codeBitmap() ?: return@launch
-                    val host = qr.identity?.link?.displayHost.orEmpty()
-                    val card = withContext(Dispatchers.Default) { postcard(city, code, host) }
-                    shareImage(context, withContext(Dispatchers.IO) { saveShot(context, card, "skyline-qr-postcard") })
-                  }
-                },
-              )
-              DropdownMenuItem(
-                text = { Text("A link to this city") },
-                onClick = {
-                  menu = false
-                  val city = SharedCity(settledUrl, generatorVersion, identityScope, CityPreset.KUALA_LUMPUR, time, weather)
-                  shareText(context, runCatching { ShareLink.encode(city) }.getOrNull() ?: return@DropdownMenuItem)
-                },
-              )
-            }
+          // Share sends the link to this city and nothing else: it opens this very city in the app.
+          // A payment code's city has none, so the button folds away and the picker takes its room.
+          AnimatedVisibility(!paying) {
+            ShareButton(
+              "Share a link to this city",
+              onClick = {
+                val city = SharedCity(url, generatorVersion, identityScope, CityPreset.KUALA_LUMPUR, time, weather)
+                runCatching { ShareLink.encode(city) }.getOrNull()?.let { shareText(context, it) }
+              },
+            )
           }
         }
 
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-          Segments(TIMES, time, { time = it }, fill, icon = { it.icon }, label = { it.label }, modifier = Modifier.weight(1f))
-          Box {
-            var menu by remember { mutableStateOf(false) }
-            TileButton(weather.icon, "Weather: ${weather.label}", fill, onClick = { menu = true }, menu = true)
-            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-              for (option in WEATHERS) {
-                val chosen = option == weather
-                DropdownMenuItem(
-                  text = { Text(option.label, color = if (chosen) MaterialTheme.colorScheme.primary else Color.Unspecified) },
-                  leadingIcon = {
-                    Icon(
-                      option.icon,
-                      contentDescription = null,
-                      tint = if (chosen) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                      modifier = Modifier.size(20.dp),
-                    )
-                  },
-                  onClick = {
-                    weather = option
-                    menu = false
-                  },
-                )
-              }
-            }
-          }
-          TileButton(if (muted) SkylineIcons.SoundOff else SkylineIcons.SoundOn, if (muted) "Sound off" else "Sound on", fill, onClick = { muted = !muted })
+          // Labels alone: with icons too, "Now" and "Night" cut off once the font is larger.
+          PillChoices(TIMES, time, { time = it }, label = { it.label }, modifier = Modifier.weight(1f))
+          MenuButton(weather, WEATHERS, { weather = it }, icon = { it.icon }, label = { it.label }, description = "Weather")
+          AddButton(onClick = onAdd)
         }
       }
     }
   }
 }
 
+/** Where the app keeps its settings, and the clouds' key there. */
+private const val SETTINGS = "skylineqr"
+private const val CLOUDS = "clouds"
+
 /** Now follows the clock through dawn and dusk; the fixed choices are just day and night. */
 private val TIMES = listOf(TimeOfDay.AUTO, TimeOfDay.DAY, TimeOfDay.NIGHT)
 
 /** A storm already rains; the app offers no rain of its own. */
 private val WEATHERS = listOf(Weather.CLEAR, Weather.STORM, Weather.HAZE)
+
+/** What the screen on Bukit Bintang's mall shows, in turn. */
+private val BILLBOARD = listOf("马大牛逼", "tarumt #1", "i need argon")
 
 private val TimeOfDay.label
   get() =
@@ -317,14 +264,6 @@ private val TimeOfDay.label
       TimeOfDay.DAY -> "Day"
       TimeOfDay.DUSK -> "Dusk"
       TimeOfDay.NIGHT -> "Night"
-    }
-
-private val TimeOfDay.icon
-  get() =
-    when (this) {
-      TimeOfDay.AUTO -> SkylineIcons.Now
-      TimeOfDay.NIGHT -> SkylineIcons.Night
-      else -> SkylineIcons.Day
     }
 
 private val Weather.label
@@ -345,13 +284,6 @@ private val Weather.icon
       Weather.STORM -> SkylineIcons.Storm
     }
 
-private fun saveShot(context: Context, bitmap: Bitmap, name: String): Uri {
-  val directory = File(context.cacheDir, "shots").apply { mkdirs() }
-  val file = File(directory, "$name.png")
-  FileOutputStream(file).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
-  return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-}
-
 private fun shareText(context: Context, link: String) {
   val intent =
     Intent(Intent.ACTION_SEND).apply {
@@ -359,34 +291,4 @@ private fun shareText(context: Context, link: String) {
       putExtra(Intent.EXTRA_TEXT, link)
     }
   context.startActivity(Intent.createChooser(intent, "Share this city"))
-}
-
-/** The licences of everything the app is built from, bundled as one text asset. */
-@Composable
-private fun Licences(onDismiss: () -> Unit) {
-  val context = LocalContext.current
-  val text = remember { context.assets.open("licenses.txt").bufferedReader().use { it.readText() } }
-  AlertDialog(
-    onDismissRequest = onDismiss,
-    confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
-    title = { Text("Open-source licences") },
-    text = {
-      Text(
-        text,
-        style = MaterialTheme.typography.bodySmall,
-        fontFamily = FontFamily.Monospace,
-        modifier = Modifier.verticalScroll(rememberScrollState()),
-      )
-    },
-  )
-}
-
-private fun shareImage(context: Context, uri: Uri) {
-  val intent =
-    Intent(Intent.ACTION_SEND).apply {
-      type = "image/png"
-      putExtra(Intent.EXTRA_STREAM, uri)
-      addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    }
-  context.startActivity(Intent.createChooser(intent, "Share skyline code"))
 }

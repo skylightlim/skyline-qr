@@ -1,5 +1,8 @@
 package com.skylightlim.skylineqr.city
 
+import com.skylightlim.skylineqr.core.QrMatrix
+import com.skylightlim.skylineqr.core.QrRole
+import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.sqrt
 
@@ -22,9 +25,16 @@ class Mover(
   val inset: Float = 0f,
   /** Slows almost to a hover once a lap, the way a patrolling helicopter does. */
   val hovers: Boolean = false,
+  /** For a car: three floats per stop line, where along the loop it halts, its junction and axis. */
+  val stops: FloatArray = FloatArray(0),
+  /** The lights the car stops for. */
+  val signals: Signals = Signals.NONE,
 ) {
+  private val schedule = if (stops.isNotEmpty()) Schedule(route, speed, phase * route.length, stops, signals) else null
+
   /** How far along the route it is at [time] seconds. */
   fun distance(time: Float): Float {
+    schedule?.let { return it.distance(time) }
     if (shuttle) {
       val span = max(0.01f, route.length - 2f * inset)
       val travel = span / speed
@@ -79,6 +89,7 @@ internal object Traffic {
   private const val KEEP_LEFT = 0.15f
 
   fun plan(
+    matrix: QrMatrix,
     heights: FloatArray,
     n: Int,
     seed: Int,
@@ -86,9 +97,9 @@ internal object Traffic {
     towerTop: Float,
     landmarks: LandmarkPlan?,
     data: Instances,
-  ): List<Mover> {
+  ): Plan {
     val out = ArrayList<Mover>()
-    val streets = Streets(n, heights)
+    val streets = Streets(matrix, heights)
     val half = n / 2f
 
     // The bus takes the ring road; the cars take the longest distinct loops through the streets.
@@ -103,17 +114,119 @@ internal object Traffic {
       for (k in 0 until count) cars += loop to k
       if (cars.size >= 12) break
     }
+    val signals = signals(streets, cars.take(12).map { it.first }.distinct(), n, seed)
     for ((i, entry) in cars.take(12).withIndex()) {
       val (loop, k) = entry
       val count = max(1, loop.size / 18)
       val phase = (k + hash(i, loop.size, seed + 77) * 0.6f) / count
-      out += Mover(Mover.CAR, route(loop, n), 1.5f + 1.0f * hash(i, 3, seed + 733), phase % 1f, hash(i, 5, seed + 811))
+      val route = route(loop, n)
+      out += Mover(
+        Mover.CAR, route, 1.5f + 1.0f * hash(i, 3, seed + 733), phase % 1f, hash(i, 5, seed + 811),
+        stops = stopLines(route, signals, n), signals = signals,
+      )
     }
 
-    if (landmarks != null) monorail(heights, n, seed, data)?.let { out += it }
+    if (landmarks != null) monorail(heights, n, seed, landmarks, data)?.let { out += it }
     out += helicopter(n, seed, skyline, towerTop, landmarks)
     out += plane(half, skyline)
-    return out
+    return Plan(out, signals)
+  }
+
+  /** Everything that moves, and the lights the cars stop for. */
+  class Plan(val movers: List<Mover>, val signals: Signals)
+
+  // ---------------------------------------------------------------------------------------------
+  // Traffic lights
+  // ---------------------------------------------------------------------------------------------
+
+  /** Junctions with lights stand at least this many modules apart. */
+  private const val SIGNAL_SPACING = 4f
+
+  /** How far short of the junction a car's middle halts: half a car and a little. */
+  private const val STOP_SHORT = 0.32f
+
+  /**
+   * Traffic lights at junctions the cars drive through: crossings first (cars arriving along both
+   * axes), then in seeded order, spread out and clear of the corners. A signal stands on the left
+   * kerb of each approach a car uses, at the near corner where the arriving driver sees it; it is
+   * drawn with the traffic ([Vehicles.signals]), as its lamp changes.
+   */
+  private fun signals(streets: Streets, loops: List<List<Pair<Int, Int>>>, n: Int, seed: Int): Signals {
+    val approaches = HashMap<Int, MutableSet<Int>>()
+    for (loop in loops) for (i in loop.indices) {
+      val (x, z) = loop[i]
+      if (x !in 0 until n || z !in 0 until n || LandmarkPlan.inCorner(x, z, n)) continue
+      var ways = 0
+      for (d in 0 until 4) if (streets.open(x + DX[d], z + DZ[d])) ways++
+      if (ways < 3) continue
+      val (px, pz) = loop[(i - 1 + loop.size) % loop.size]
+      val d = (0 until 4).firstOrNull { DX[it] == x - px && DZ[it] == z - pz } ?: continue
+      approaches.getOrPut(z * n + x) { HashSet() } += d
+    }
+    fun axes(cell: Int) = approaches.getValue(cell).map { it % 2 }.distinct().size
+    val chosen = ArrayList<Int>()
+    for (cell in approaches.keys.sortedWith(compareBy({ -axes(it) }, { hash(it % n, it / n, seed + 907) }))) {
+      if (chosen.size == Signals.MAX_JUNCTIONS) break
+      val far = chosen.all { other ->
+        val dx = (cell % n - other % n).toFloat()
+        val dz = (cell / n - other / n).toFloat()
+        sqrt(dx * dx + dz * dz) >= SIGNAL_SPACING
+      }
+      if (far) chosen += cell
+    }
+    val half = n / 2f
+    val heads = ArrayList<Float>()
+    for ((j, cell) in chosen.withIndex()) {
+      val cx = cell % n + 0.5f - half
+      val cz = cell / n + 0.5f - half
+      for (d in approaches.getValue(cell).sorted()) {
+        val dx = DX[d].toFloat()
+        val dz = DZ[d].toFloat()
+        // Left of a heading (dx, dz) is (dz, -dx): the junction's near corner on the driver's left.
+        val px = cx - dx * 0.44f + dz * 0.44f
+        val pz = cz - dz * 0.44f - dx * 0.44f
+        heads += listOf(px, pz, dx, dz, j.toFloat(), if (dx != 0f) 0f else 1f)
+      }
+    }
+    val offsets = FloatArray(chosen.size) { hash(chosen[it] % n, chosen[it] / n, seed + 919) * Signals.CYCLE }
+    val cells = IntArray(chosen.size * 2) { if (it % 2 == 0) chosen[it / 2] % n else chosen[it / 2] / n }
+    return Signals(heads.toFloatArray(), offsets, cells)
+  }
+
+  /**
+   * Where along a car's [route] it halts for each light it meets, three floats a line: found by
+   * walking the loop and noting where it crosses into a junction's module from the one before.
+   */
+  private fun stopLines(route: Route, signals: Signals, n: Int): FloatArray {
+    if (signals.count == 0) return FloatArray(0)
+    val junction = HashMap<Int, Int>()
+    for (j in 0 until signals.cells.size / 2) junction[signals.cells[j * 2 + 1] * (n + 2) + signals.cells[j * 2]] = j
+    val half = n / 2f
+    val point = FloatArray(4)
+    fun cellAt(s: Float): Int {
+      route.at(s, point)
+      return kotlin.math.floor(point[2] + half).toInt() * (n + 2) + kotlin.math.floor(point[0] + half).toInt()
+    }
+    val out = ArrayList<Float>()
+    val step = 0.02f
+    var before = cellAt(0f)
+    var s = step
+    while (s <= route.length + step) {
+      val cell = cellAt(s)
+      if (cell != before) {
+        val j = junction[cell]
+        val across = cell % (n + 2) - before % (n + 2)
+        val along = cell / (n + 2) - before / (n + 2)
+        if (j != null && kotlin.math.abs(across) + kotlin.math.abs(along) == 1) {
+          out += ((s - STOP_SHORT) % route.length + route.length) % route.length
+          out += j.toFloat()
+          out += if (across != 0) 0f else 1f
+        }
+        before = cell
+      }
+      s += step
+    }
+    return out.toFloatArray()
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -121,10 +234,12 @@ internal object Traffic {
   // ---------------------------------------------------------------------------------------------
 
   /**
-   * The road network: every light module, and a ring road one module outside the code, with dead
-   * ends pruned away so a car never has to turn round.
+   * The road network: every light module but the gaps inside the finder patterns (a closed ring no
+   * street leads into; in Kuala Lumpur, a pool and a promenade), and a ring road one module outside
+   * the code, with dead ends pruned away so a car never has to turn round.
    */
-  private class Streets(val n: Int, heights: FloatArray) {
+  private class Streets(matrix: QrMatrix, heights: FloatArray) {
+    val n = matrix.size
     private val m = n + 2
     private val free = BooleanArray(m * m)
 
@@ -132,7 +247,7 @@ internal object Traffic {
       for (z in -1..n) {
         for (x in -1..n) {
           val ring = x < 0 || z < 0 || x >= n || z >= n
-          free[index(x, z)] = ring || heights[z * n + x] <= 0f
+          free[index(x, z)] = ring || (heights[z * n + x] <= 0f && matrix.role(x, z) != QrRole.FINDER)
         }
       }
       var pruned = true
@@ -251,13 +366,14 @@ internal object Traffic {
     fun covers(x: Int, z: Int) = if (alongX) z == fixed && x in from..to else x == fixed && z in from..to
   }
 
-  private fun runs(heights: FloatArray, n: Int): List<Run> {
+  /** Straight runs of at least three modules on which [free] holds, along x and along z. */
+  private fun runs(n: Int, free: (Int, Int) -> Boolean): List<Run> {
     val out = ArrayList<Run>()
     for (alongX in booleanArrayOf(true, false)) {
       for (fixed in 0 until n) {
         var start = -1
         for (k in 0..n) {
-          val free = k < n && (if (alongX) heights[fixed * n + k] else heights[k * n + fixed]) <= 0f
+          val free = k < n && (if (alongX) free(k, fixed) else free(fixed, k))
           if (free && start < 0) start = k
           if (!free && start >= 0) {
             if (k - start >= 3) out += Run(alongX, fixed, start, k - 1)
@@ -270,13 +386,87 @@ internal object Traffic {
   }
 
   /**
-   * The monorail follows the road: it starts on the longest street and, at each end, turns onto the
-   * longest street that meets it there, up to twice, so the line bends round the city the way a
-   * real elevated line follows the roads below it. Beam, pillars and two stations go into [data].
+   * The monorail follows the road: from a street it turns, at each end, onto the longest street
+   * that meets it there, up to twice, so the line bends round the city the way a real elevated
+   * line follows the roads below it. Only stretches of street the camera sees from its usual side
+   * count, so no tower or landmark hides the line, and of the lines every such street starts, the
+   * longest wins, a module nearer the camera counting as half a module longer. A city with no
+   * line of six modules in view takes the longest street of all, as before. Beam, pillars and two
+   * stations go into [data].
    */
-  private fun monorail(heights: FloatArray, n: Int, seed: Int, data: Instances): Mover? {
-    val all = runs(heights, n)
-    val first = all.filter { it.size >= 5 }.maxWithOrNull(compareBy<Run> { it.size }.thenBy { hash(it.fixed, it.from, seed + 5) }) ?: return null
+  private fun monorail(heights: FloatArray, n: Int, seed: Int, landmarks: LandmarkPlan, data: Instances): Mover? {
+    val seen = inView(heights, n, landmarks)
+    val half = n / 2f
+    fun reach(path: List<Pair<Int, Int>>): Float {
+      var toward = 0f
+      for ((x, z) in path) toward += Sight.toward(x + 0.5f - half, z + 0.5f - half)
+      return path.size + 0.5f * toward / path.size
+    }
+    val visible = runs(n) { x, z -> heights[z * n + x] <= 0f && seen[z * n + x] }
+    var best: List<Pair<Int, Int>>? = null
+    var bestScore = -Float.MAX_VALUE
+    for (run in visible) {
+      val path = path(run, visible)
+      if (path.size < 6) continue
+      // The seed breaks ties between equally good lines.
+      val score = reach(path) + 0.01f * hash(run.fixed, run.from * 2 + if (run.alongX) 1 else 0, seed + 5)
+      if (score > bestScore) {
+        bestScore = score
+        best = path
+      }
+    }
+    if (best == null) {
+      val all = runs(n) { x, z -> heights[z * n + x] <= 0f }
+      val first = all.filter { it.size >= 5 }.maxWithOrNull(compareBy<Run> { it.size }.thenBy { hash(it.fixed, it.from, seed + 5) }) ?: return null
+      best = path(first, all)
+    }
+    val world = best.map { (x, z) -> (x + 0.5f - half) to (z + 0.5f - half) }
+    val route = Route.rounded(world, closed = false, radius = 0.5f, y = KualaLumpur.RAIL_Y)
+    KualaLumpur.track(data, route, world)
+    return Mover(Mover.MONORAIL, route, 3.0f, 0f, 0.42f, shuttle = true, dwell = 1.8f, inset = 1.6f)
+  }
+
+  /**
+   * Which modules' streets the camera sees the monorail's beam over from its usual side: nothing
+   * between there and the camera stands up into the line of sight, not a tower, not the mall's
+   * towers, and not a landmark, each a column a little wider than its footprint (turned squares
+   * and the telecom tower's head reach past it) up to where it thins to a spire or a mast.
+   */
+  private fun inView(heights: FloatArray, n: Int, landmarks: LandmarkPlan): BooleanArray {
+    val skyline = heights.copyOf()
+    Corners.residencesOver(skyline, n)
+    val half = n / 2f
+    val columns = ArrayList<FloatArray>() // x, z, radius, height
+    fun column(f: Footprint, reach: Float, h: Float) {
+      columns += floatArrayOf(f.centerX - half, f.centerZ - half, max(f.size * 0.75f, reach), h)
+    }
+    landmarks.supertall?.let { column(it, 0f, KualaLumpur.supertallHeight(n) * 0.79f) }
+    landmarks.twins?.let { (a, b) ->
+      column(a, 0f, KualaLumpur.twinHeight(n) * 0.885f)
+      column(b, 0f, KualaLumpur.twinHeight(n) * 0.885f)
+    }
+    landmarks.telecom?.let { column(it, 1.35f, KualaLumpur.telecomHeight(n) * 0.86f + 1.2f) }
+    var top = 0f
+    for (h in skyline) top = max(top, h)
+    for (c in columns) top = max(top, c[3])
+    fun height(x: Float, z: Float): Float {
+      val col = floor(x + half).toInt()
+      val row = floor(z + half).toInt()
+      var h = if (col < 0 || row < 0 || col >= n || row >= n) 0f else skyline[row * n + col]
+      for (c in columns) {
+        val dx = x - c[0]
+        val dz = z - c[1]
+        if (dx * dx + dz * dz < c[2] * c[2]) h = max(h, c[3])
+      }
+      return h
+    }
+    return BooleanArray(n * n) { i ->
+      Sight.clear(i % n + 0.5f - half, KualaLumpur.RAIL_Y + 0.11f, i / n + 0.5f - half, top, ::height)
+    }
+  }
+
+  /** The line's modules from the street run [first], turning onto [all]'s runs at each end. */
+  private fun path(first: Run, all: List<Run>): List<Pair<Int, Int>> {
     val path = ArrayList<Pair<Int, Int>>()
     for (k in first.from..first.to) path += if (first.alongX) k to first.fixed else first.fixed to k
 
@@ -300,12 +490,7 @@ internal object Traffic {
     }
     extend(atEnd = true)
     extend(atEnd = false)
-
-    val half = n / 2f
-    val world = path.map { (x, z) -> (x + 0.5f - half) to (z + 0.5f - half) }
-    val route = Route.rounded(world, closed = false, radius = 0.5f, y = KualaLumpur.RAIL_Y)
-    KualaLumpur.track(data, route, world)
-    return Mover(Mover.MONORAIL, route, 3.0f, 0f, 0.42f, shuttle = true, dwell = 1.8f, inset = 1.6f)
+    return path
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -327,6 +512,7 @@ internal object Traffic {
         obstacles += obstacle(b, half, KualaLumpur.twinHeight(n))
       }
       landmarks.telecom?.let { obstacles += obstacle(it, half, KualaLumpur.telecomHeight(n)) }
+      obstacles += Corners.obstacles(n)
     }
     val cruise = towerTop + 2.2f
     for (k in 0 until 32) {

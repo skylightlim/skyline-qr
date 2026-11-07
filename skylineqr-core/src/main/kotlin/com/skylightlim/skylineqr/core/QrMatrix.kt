@@ -31,7 +31,9 @@ object QrEncoder {
 
   fun encode(payload: String, generatorVersion: Int = GeneratorVersion.CURRENT): QrMatrix {
     GeneratorVersion.resolve(generatorVersion)
-    // Payloads are percent-encoded ASCII, so the default byte mode fits them without an ECI header.
+    // Payloads are ASCII: percent-encoded links, which ZXing puts in byte mode without an ECI
+    // header, or payment codes (digits and capitals), which it puts in alphanumeric mode, the
+    // denser one, so a 125-character DuitNow code still fits version 6 at M.
     require(payload.all { it.code in 0x20..0x7e }) { "payload must be ASCII: $payload" }
     val code =
       try {

@@ -19,7 +19,7 @@ class AtmosphereTest {
       // Tinted, not white, at every fixed hour. (Auto passes briefly near neutral as one hour's tint
       // blends into the next.)
       if (time != TimeOfDay.AUTO) assertTrue("$time $weather: paper is white", paper.max() - paper.min() > 0.04f)
-      // The surround is darker than the card, so the code stands out from the screen around it.
+      // The surround is darker than the paper, so the code stands out from the screen around it.
       assertTrue(luma(Atmospheres.surround(air)) < luma(paper) - 0.1f)
     }
   }

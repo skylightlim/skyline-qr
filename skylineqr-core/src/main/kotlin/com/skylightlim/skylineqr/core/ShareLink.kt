@@ -27,8 +27,11 @@ object ShareLink {
   const val BASE = "https://skylightlim.github.io/city/"
   private const val FORMAT = 1
 
+  /** The share link of [city]. A payment code's city has none (2026-11-07, the user's call). */
   fun encode(city: SharedCity): String {
-    val payload = Link.parse(city.url).payload.toByteArray(Charsets.UTF_8)
+    val link = Link.parse(city.url)
+    require(!link.isPaymentCode) { "A payment code's city is not shared as a link." }
+    val payload = link.payload.toByteArray(Charsets.UTF_8)
     val packed =
       (city.scope.ordinal shl 7) or (city.preset.ordinal shl 5) or (city.time.ordinal shl 2) or city.weather.ordinal
     val bytes = byteArrayOf(FORMAT.toByte(), city.generatorVersion.toByte(), packed.toByte()) + payload

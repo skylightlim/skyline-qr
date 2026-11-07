@@ -25,6 +25,11 @@ class Link private constructor(
   val pageIdentity: String,
   /** The query carries something like a token or a password: worth a warning before sharing. */
   val hasSensitiveQuery: Boolean,
+  /**
+   * It is a payment code, not a web link (see [PaymentCode]): its payload is the code exactly as
+   * given, its identity the whole code, and it is never put in a share link.
+   */
+  val isPaymentCode: Boolean = false,
 ) {
 
   companion object {
@@ -54,6 +59,12 @@ class Link private constructor(
     fun parse(input: String): Link {
       if (input.toByteArray(Charsets.UTF_8).size > MAX_INPUT_BYTES) {
         throw InvalidLinkException("That link is longer than SkylineQR can safely process.")
+      }
+      // A payment code builds a city too (2026-11-07), kept exactly: only blank space around it,
+      // which is no part of any field, is dropped.
+      val code = input.trim()
+      if (PaymentCode.isPaymentCode(code)) {
+        return Link(code, code, PaymentCode.payee(code) ?: "Payment code", "pay:$code", "pay:$code", hasSensitiveQuery = false, isPaymentCode = true)
       }
       // Browsers drop tabs and newlines anywhere in a URL, so a pasted link survives line wraps.
       val trimmed = input.trim().filterNot { it == '\t' || it == '\n' || it == '\r' }

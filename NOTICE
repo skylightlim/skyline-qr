@@ -41,9 +41,12 @@ Every QR Code is distributed under this licence:
 Icons (app/src/main/kotlin/com/skylightlim/skylineqr/ui/Icons.kt)
 ------------------------------------------------------------------------------
 
-The panel's icons are path data from Lucide 0.460 (https://lucide.dev): clock-3,
-sun, moon, cloud-rain, haze, cloud-lightning, volume-2, volume-x, share, info and
-chevron-down. Lucide is distributed under this licence:
+The app's icons are path data from Lucide 0.460 (https://lucide.dev): sun,
+cloud-rain, haze, cloud-lightning, share, chevron-down, rotate-ccw and check
+for the city's panel, and trash-2 for its card picker; nfc, smartphone-nfc,
+scan-line, plus, eye, eye-off and triangle-alert for the card popup and tap to
+share. Lucide is distributed under
+this licence:
 
   ISC License
 
@@ -64,22 +67,16 @@ chevron-down. Lucide is distributed under this licence:
   CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 ------------------------------------------------------------------------------
-Sounds (app/src/main/res/raw), all CC0 1.0 from OpenGameArt.org
+Tap to share (skylineqr-nfc)
 ------------------------------------------------------------------------------
 
-No attribution is required; it is given anyway. Each was trimmed, filtered,
-loudness-normalised and, for the loops, crossfaded end into start.
-
-- day_traffic.ogg: "High traffic road sounds" by IgnasD
-  https://opengameart.org/content/high-traffic-road-sounds
-- night_insects.ogg: "Crickets Ambient Noise - loopable" by Wolfgang_
-  https://opengameart.org/content/crickets-ambient-noise-loopable
-- rain.ogg: "Rain (loopable)" by Ylmir
-  https://opengameart.org/content/rain-loopable
-- thunder.ogg and meteor_whoosh.ogg: "100 CC0 SFX #2" by rubberduck
-  https://opengameart.org/content/100-cc0-sfx-2
-- meteor_impact.ogg: "Chunky Explosion" by Joth
-  https://opengameart.org/content/chunky-explosion
+skylineqr-nfc is written from the public specifications its sources name: NFC
+Forum NDEF 1.0 and its URI, Text and Smart Poster record types, Type 2 and
+Type 4 Tag 2.0, ISO 7816-4, Wi-Fi Simple Configuration 2.0, vCard 3.0 (RFC
+2426) and MECARD. How Tap Tap Tap (com.thangman22.taptaptap) behaves was looked
+at; none of its code is used. Its QR scanner uses Google's ML Kit barcode
+scanning with the bundled model, under the ML Kit Terms of Service
+(https://developers.google.com/ml-kit/terms).
 
 ------------------------------------------------------------------------------
 Inspiration (ideas only, no code)

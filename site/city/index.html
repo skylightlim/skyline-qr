@@ -49,8 +49,7 @@
         display: block; text-align: center; text-decoration: none; font-weight: 600;
         padding: 14px 16px; border-radius: 12px; margin-top: 10px;
       }
-      a.primary { background: var(--accent); color: var(--paper); }
-      a.secondary { border: 1px solid var(--line); color: var(--ink); background: var(--card); overflow-wrap: anywhere; }
+      a.primary { background: var(--accent); color: var(--paper); overflow-wrap: anywhere; }
       .note { color: var(--muted); font-size: 14px; margin-top: 22px; }
       .note a { color: var(--accent); }
     </style>
@@ -63,12 +62,10 @@
       <h1 id="title">A city someone shared with you</h1>
       <div class="code" id="code" role="img" aria-label="QR code"></div>
       <div class="meta" id="meta" hidden><span>City <b id="cityCode"></b></span><span id="light"></span></div>
-      <a class="button primary" href="https://github.com/skylightlim/skyline-qr/releases/latest">Get Skyline QR for Android</a>
-      <a class="button secondary" id="visit" hidden></a>
+      <a class="button primary" id="visit" hidden></a>
       <p class="note">
-        In the app this code rises into a city: every building stands on one of its squares, and a
-        tap folds the skyline back into the code.
-        <a href="https://github.com/skylightlim/skyline-qr">How it works</a>
+        In the Skyline QR app this code rises into a city: every building stands on one of its
+        squares, and a tap folds the skyline back into the code.
       </p>
     </main>
     <script>

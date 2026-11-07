@@ -13,9 +13,9 @@ import com.skylightlim.skylineqr.city.City
 import com.skylightlim.skylineqr.city.FlatColours
 
 /**
- * The code alone, without the city: what shows when WebGPU cannot start, so the link still scans.
- * Colours follow the flat 3D code module by module (see [FlatColours]): each dark module its
- * tower's colour in the hour's light, each light module the hour's paper.
+ * The code alone, without the city: what shows when WebGPU cannot start, so the link still scans,
+ * and the shared image. Colours follow the flat 3D code (see [FlatColours]): a mosaic of square
+ * modules, each dark one in its ink and each light one in its shade of the hour's paper.
  */
 internal object FlatCode {
 
@@ -25,12 +25,13 @@ internal object FlatCode {
 
   fun bitmap(city: City, air: Atmosphere, modulePx: Int = 16): Bitmap {
     val side = (city.modules + 2 * QUIET) * modulePx
-    val colours = IntArray(city.modules * city.modules) { argb(FlatColours.module(city, it % city.modules, it / city.modules, air)) }
+    val n = city.modules
+    val colours = IntArray(n * n) { argb(FlatColours.module(city, it % n, it / n, air)) }
     val paper = paper(air)
     val pixels = IntArray(side * side) { i ->
       val col = (i % side) / modulePx - QUIET
       val row = (i / side) / modulePx - QUIET
-      if (col in 0 until city.modules && row in 0 until city.modules) colours[row * city.modules + col] else paper
+      if (col in 0 until n && row in 0 until n) colours[row * n + col] else paper
     }
     return Bitmap.createBitmap(pixels, side, side, Bitmap.Config.ARGB_8888)
   }

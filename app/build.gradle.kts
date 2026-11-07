@@ -8,7 +8,7 @@ plugins {
 
 android {
     namespace = "com.skylightlim.skylineqr"
-    compileSdk = 36
+    compileSdk = 37
     defaultConfig {
         applicationId = "com.skylightlim.skylineqr"
         minSdk = 26
@@ -67,6 +67,9 @@ dependencies {
   androidTestImplementation(composeBom)
 
   implementation(project(":skylineqr-compose"))
+  // Tap to share, saved cards, reading tags and the QR scanner.
+  implementation(project(":skylineqr-nfc"))
+  implementation(libs.androidx.camera.view)
 
   // Core Android dependencies
   implementation(libs.androidx.core.ktx)
@@ -79,6 +82,9 @@ dependencies {
 
   // Compose
   implementation(libs.androidx.compose.ui)
+  // Keeps the keyboard up between the card popup's fields (see androidxComposeTextFix).
+  implementation(libs.androidx.compose.ui.fixed)
+  implementation(libs.androidx.compose.foundation.fixed)
   implementation(libs.androidx.compose.ui.tooling.preview)
   implementation(libs.androidx.compose.material3)
   // Tooling

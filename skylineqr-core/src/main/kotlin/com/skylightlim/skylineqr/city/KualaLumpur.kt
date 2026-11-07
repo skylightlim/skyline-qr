@@ -26,8 +26,35 @@ internal object KualaLumpur {
   const val RED = 5
   const val SMOKE = 6
   const val BLUE_GLASS = 7
+  /** The corners' colours: trees, lawn, pools, bronze, brick, the flag's blue and yellow, granite. */
+  const val LEAF = 8
+  const val LAWN = 9
+  const val WATER = 10
+  const val BRONZE = 11
+  const val BRICK = 12
+  const val FLAG_BLUE = 13
+  const val FLAG_YELLOW = 14
+  const val GRANITE = 15
+  /** The mall's champagne fins and white lattice, the flags' red and white, and rose crystal. */
+  const val CHAMPAGNE = 16
+  const val LATTICE = 17
+  const val FLAG_RED = 18
+  const val FLAG_WHITE = 19
+  const val CRYSTAL = 20
+  /**
+   * The mall's two lights after dark, and no others: warm gold along its fins, cool white in its
+   * lattice and its name.
+   */
+  const val NEON_WARM = 21
+  const val NEON_COOL = 22
 
-  /** The fixed materials of the KL preset's ordinary towers: glass, steel and cream render. */
+  /** Slots in the shader's landmark palette. */
+  const val SLOTS = 32
+
+  /**
+   * The fixed materials of the KL preset: its six districts' colours (see [FlatColours]), the
+   * traffic's undercoat of glass, steel, cream render and teal, and the landmarks' palette.
+   */
   val materials =
     MaterialRecipe(
       "Kuala Lumpur",
@@ -35,11 +62,25 @@ internal object KualaLumpur {
       Materials.rgb(0xD9473A),
       // Stainless steel, blue-silver glass, white concrete, the green of the telecom tower's hill,
       // the copper of its bowl, the red of its mast, the smoked glass of its decks, and the
-      // supertall's deeper blue glass.
+      // supertall's deeper blue glass; then for the corners, the garden's trees and lawns, the
+      // monument's pool and bronze, the square's brick, the flag's blue and yellow, and granite;
+      // then the mall's champagne fins and white lattice, the flag's red and white, rose crystal,
+      // and the mall's warm and cool lights.
       floatArrayOf(
         *Materials.rgb(0xC9CED4), *Materials.rgb(0x8FAACB), *Materials.rgb(0xECEBE6), *Materials.rgb(0x4E8B46),
         *Materials.rgb(0xD08A5C), *Materials.rgb(0xC9402F), *Materials.rgb(0x3E4550), *Materials.rgb(0x52719C),
+        *Materials.rgb(0x2F6B3A), *Materials.rgb(0x6FA84A), *Materials.rgb(0x3F7FA0), *Materials.rgb(0x8A6236),
+        *Materials.rgb(0xB4553A), *Materials.rgb(0x1C2D8C), *Materials.rgb(0xF2C318), *Materials.rgb(0x7E7B76),
+        *Materials.rgb(0xDDCDA8), *Materials.rgb(0xEFEDE8), *Materials.rgb(0xD22630), *Materials.rgb(0xF4F4F2),
+        *Materials.rgb(0xF3C6D3), *Materials.rgb(0xFFCC85), *Materials.rgb(0xD6EDFF), *FloatArray(27),
       ),
+      // The garden's green glass, the mall's champagne, the square's brick, the twin towers'
+      // steel, the supertall's blue glass and the telecom tower's teal, in FlatColours' order.
+      districts =
+        floatArrayOf(
+          *Materials.rgb(0x6FAF8A), *Materials.rgb(0xDCB27C), *Materials.rgb(0xC66B4E),
+          *Materials.rgb(0xAAB6C4), *Materials.rgb(0x5B8CC4), *Materials.rgb(0x4FA6A0),
+        ),
     )
 
   /** Twin tower height for a QR [modules] wide: the other landmarks follow in true proportion. */
@@ -117,6 +158,7 @@ internal object KualaLumpur {
       skybridge(out, a, b, half, h, k)
     }
     plan.telecom?.let { telecom(out, it.centerX - half, it.centerZ - half, telecomHeight(modules), it.size) }
+    Corners.build(out, modules)
   }
 
   /** The twin tower: tiers of the eight-pointed star, a crown, and a pinnacle. */
@@ -256,7 +298,7 @@ internal object KualaLumpur {
   }
 
   /** A square and the same square turned 45 degrees: the star plan. */
-  private fun star(
+  internal fun star(
     out: Instances, x: Float, z: Float, y0: Float, y1: Float, size: Float, colour: Int, taper: Float = 1f, glow: Float,
     plain: Boolean = false,
   ) {
@@ -265,11 +307,11 @@ internal object KualaLumpur {
   }
 
   /** A round section from radius [r0] at the bottom to [r1] at the top. */
-  private fun round(out: Instances, x: Float, z: Float, y0: Float, y1: Float, r0: Float, r1: Float, colour: Int, glow: Float, plain: Boolean = true) {
+  internal fun round(out: Instances, x: Float, z: Float, y0: Float, y1: Float, r0: Float, r1: Float, colour: Int, glow: Float, plain: Boolean = true) {
     for (i in 0 until 4) part(out, x, z, y0, y1, r0 * ROUND_SIDE, i * SIXTEENTH, r1 / r0, colour, glow, plain)
   }
 
-  private fun part(
+  internal fun part(
     out: Instances, x: Float, z: Float, y0: Float, y1: Float, size: Float, yaw: Float, taper: Float, colour: Int, glow: Float,
     plain: Boolean = false,
   ) {
@@ -277,8 +319,12 @@ internal object KualaLumpur {
   }
 
   /**
-   * The shader reads a landmark's colour from its random slot, an eighth of it per colour, and
-   * whether its walls have windows from where in that eighth it sits: early they do, late (plain) not.
+   * The shader reads a landmark's colour from its random slot, a [SLOTS]th of it per colour, and
+   * whether its walls have windows from where in that share it sits: early they do, late (plain)
+   * not, and latest of all a piece of flag, waving the more the further it is from the pole
+   * ([wave] 0 at the pole to 1 at the fly).
    */
-  private fun colour(index: Int, plain: Boolean = false) = (index + if (plain) 0.62f else 0.2f) / 8f
+  internal fun colour(index: Int, plain: Boolean = false) = (index + if (plain) 0.62f else 0.2f) / SLOTS
+
+  internal fun flagColour(index: Int, wave: Float) = (index + 0.7f + 0.28f * wave.coerceIn(0f, 1f)) / SLOTS
 }

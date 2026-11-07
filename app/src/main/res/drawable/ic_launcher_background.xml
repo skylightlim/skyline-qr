@@ -3,7 +3,8 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <!-- White, so the black skyline reads as a flat silhouette. -->
     <path
         android:pathData="M0,0h108v108h-108z"
-        android:fillColor="#0B0E14" />
+        android:fillColor="#FFFFFF" />
 </vector>

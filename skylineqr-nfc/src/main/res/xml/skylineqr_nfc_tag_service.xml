@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- requireDeviceUnlock: a locked phone never answers, so nobody can read a share off it. -->
+<host-apdu-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/skylineqr_nfc_service_description"
+    android:requireDeviceUnlock="true">
+    <aid-group
+        android:category="other"
+        android:description="@string/skylineqr_nfc_aid_description">
+        <!-- The NFC Forum NDEF tag application. -->
+        <aid-filter android:name="D2760000850101" />
+    </aid-group>
+</host-apdu-service>

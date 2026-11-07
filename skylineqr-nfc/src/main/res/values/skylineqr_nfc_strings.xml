@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="skylineqr_nfc_tile_label">Share profile</string>
+    <string name="skylineqr_nfc_tile_sharing">Hold to their phone</string>
+    <string name="skylineqr_nfc_service_description">SkylineQR tap to share</string>
+    <string name="skylineqr_nfc_aid_description">NFC tag (NDEF)</string>
+</resources>

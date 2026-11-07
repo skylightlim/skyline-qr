@@ -18,13 +18,14 @@ import org.junit.Test
  */
 class GeneratorFingerprintTest {
 
+  // 2026-11-07: the flat code's inks became each district's own lively hue.
   private val golden =
     linkedMapOf(
-      "kl:https://github.com/skylightlim/skyline-qr" to "a23fc2a82c07f53a",
-      "kl:https://um.edu.my/" to "7f79d1220d56334f",
-      "https://github.com/skylightlim/skyline-qr" to "bb9475b9eaae3256",
-      "https://example.com/" to "a070c00c574adb46",
-      "https://um.edu.my/" to "2c217a9b2b66f694",
+      "kl:https://github.com/skylightlim/skyline-qr" to "4566c4804cf0a10c",
+      "kl:https://um.edu.my/" to "128208c69eb6fb7e",
+      "https://github.com/skylightlim/skyline-qr" to "f47d9cb06c8e00da",
+      "https://example.com/" to "38bd5d47692c3323",
+      "https://um.edu.my/" to "8d5f34b5dd83639b",
     )
 
   @Test
@@ -46,6 +47,9 @@ class GeneratorFingerprintTest {
     fun put(v: Float) = digest.update(bytes.clear().putFloat(v).array())
     city.instances.forEach(::put)
     city.materials.families.forEach(::put)
+    city.materials.districts.forEach(::put)
+    city.tones.forEach { put(it.toFloat()) }
+    city.inks.forEach { put(it.toFloat()) }
     for (m in city.movers) {
       digest.update(bytes.clear().putInt(m.kind * 4 + (if (m.shuttle) 2 else 0) + (if (m.hovers) 1 else 0)).array())
       listOf(m.speed, m.phase, m.rnd, m.dwell, m.inset).forEach(::put)

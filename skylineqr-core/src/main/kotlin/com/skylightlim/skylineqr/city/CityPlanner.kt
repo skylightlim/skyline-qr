@@ -25,6 +25,17 @@ class City(
   val preset: CityPreset,
   /** Where the Kuala Lumpur landmarks stand; null in the generic city. */
   val landmarks: LandmarkPlan?,
+  /** Each module's tone, row by row: its tower colour or paper shade; see [FlatColours.tones]. */
+  val tones: IntArray,
+  /** Each module's ink in the flat code, row by row; see [FlatColours.inks]. */
+  val inks: IntArray,
+  /** The traffic lights, drawn with the traffic as their lamps change. */
+  val signals: Signals = Signals.NONE,
+  /**
+   * Where a screen for a billboard can stand: the middle of its face (x, y, z), its width and
+   * height, facing +z. On the mall tower in Kuala Lumpur; null in a city without one.
+   */
+  val screen: FloatArray? = null,
 ) {
   /** Half-width of the floating plate, quiet zone included. */
   val plateHalf: Float
@@ -40,11 +51,19 @@ class City(
 object CityPlanner {
 
   /**
-   * Floats per instance: offset xyz, size xyz, then role, height 0..1, pattern (1 on the code's
-   * function patterns: finders, timing, alignment, format; see [FlatColours]), a per-instance
-   * random, and the yaw and taper that let a box turn about its axis and narrow toward its top.
+   * Floats per instance: offset xyz, size xyz, then role, height 0..1, the flat code's module
+   * (see [module]), a per-instance random, and the yaw and taper that let a box turn about its axis
+   * and narrow toward its top.
    */
   const val STRIDE = 12
+
+  /**
+   * Where the camera usually stands, in radians: its bearing round the city, 0 looking from +z
+   * (below the code) and growing toward +x, and its height above the ground. The renderer's
+   * default camera is this one, and the planner lays the landmarks and the monorail out for it.
+   */
+  const val VIEW_YAW = 0.62f
+  const val VIEW_ELEVATION = 0.60f
   const val QUIET = 2
   const val PLATE_THICK = 1.3f
   const val FLOOR = 0.42f
@@ -66,6 +85,16 @@ object CityPlanner {
   const val ROLE_DETAIL = 8f
   /** A lightning bolt, drawn as traffic: it glows on its own, white-blue. */
   const val ROLE_BOLT = 9f
+  /** A traffic light's lit lamp, drawn as traffic: red, amber or green by its random slot. */
+  const val ROLE_SIGNAL = 10f
+  /** A billboard's screen, drawn as traffic: its face shows the renderer's messages. */
+  const val ROLE_SCREEN = 11f
+
+  /**
+   * The weather's own shapes, added every frame (2026-11-07): clouds and smoke, matte, their grey
+   * in the random slot; the sun or moon, which glows, with 1 in the glow slot. They cast no shadow.
+   */
+  const val ROLE_WEATHER = 12f
 
   fun plan(matrix: QrMatrix, identity: CityIdentity, preset: CityPreset = CityPreset.GENERIC): City {
     // Version 1 is the only recipe so far; a new one branches here instead of editing this one.
@@ -75,13 +104,16 @@ object CityPlanner {
     val heights = FloatArray(n * n)
     val kl = preset == CityPreset.KUALA_LUMPUR
     val landmarks = if (kl) LandmarkPlan.plan(matrix, seed) else null
+    val materials = if (kl) KualaLumpur.materials else Materials.pick(seed)
+    val tones = FlatColours.tones(matrix, preset, landmarks, seed, materials)
+    val inks = FlatColours.inks(matrix, tones, preset, FlatColours.tones(materials) / 2, seed)
 
     for (z in 0 until n) {
       for (x in 0 until n) {
         if (!matrix.isDark(x, z)) continue
         heights[z * n + x] =
           when {
-            matrix.role(x, z) == QrRole.FINDER -> podiumHeight(x, z, n)
+            matrix.role(x, z) == QrRole.FINDER -> if (kl) Corners.height(x, z, n) else podiumHeight(x, z, n)
             landmarks?.covers(x, z) == true -> KualaLumpur.PODIUM
             kl -> min(columnHeight(x, z, n, seed), KualaLumpur.towerCap(n))
             else -> columnHeight(x, z, n, seed)
@@ -96,6 +128,13 @@ object CityPlanner {
 
     val data = Instances()
     val half = n * 0.5f
+    val skyline = if (landmarks != null) max(maxH, KualaLumpur.supertallHeight(n)) else maxH
+    // Traffic before the towers: Kuala Lumpur's crossing is a junction with lights, and the
+    // restaurant on its corner stands two floors high, whatever tower its module would have had.
+    val traffic = Traffic.plan(matrix, heights, n, seed, skyline, maxH, landmarks, data)
+    val rail = traffic.movers.firstOrNull { it.kind == Mover.MONORAIL }?.route
+    val restaurant = if (kl) Corners.restaurant(traffic.signals, matrix, landmarks, rail) else -1
+    if (restaurant >= 0) heights[restaurant] = Corners.RESTAURANT
 
     // The plate: ground for the whole city plus the QR quiet zone.
     data.put(0f, -PLATE_THICK * 0.5f, 0f, n + 2f * QUIET, PLATE_THICK, n + 2f * QUIET, ROLE_PLATE, 0f, 0f, 0f)
@@ -113,9 +152,9 @@ object CityPlanner {
           val podium = role == QrRole.FINDER
           val slim = if (podium) 1f else GAP * (1f - 0.22f * (h / maxH))
           val pattern = role != QrRole.DATA && role != QrRole.REMAINDER
-          data.put(wx, h * 0.5f, wz, slim, h, slim, ROLE_TOWER, h / maxH, if (pattern) 1f else 0f, rnd)
+          data.put(wx, h * 0.5f, wz, slim, h, slim, ROLE_TOWER, h / maxH, module(tones[z * n + x], inks[z * n + x], pattern), rnd)
         } else {
-          data.put(wx, 0.035f, wz, 1f, 0.07f, 1f, ROLE_TILE, 0f, 0f, rnd)
+          data.put(wx, 0.035f, wz, 1f, 0.07f, 1f, ROLE_TILE, 0f, module(tones[z * n + x], 0, false), rnd)
         }
       }
     }
@@ -129,22 +168,27 @@ object CityPlanner {
       }
     }
 
-    var skyline = maxH
     if (landmarks != null) {
       KualaLumpur.build(data, landmarks, n)
-      skyline = max(skyline, KualaLumpur.supertallHeight(n))
+      Corners.crossing(data, traffic.signals, matrix, landmarks, restaurant, rail)
     }
-    val movers = Traffic.plan(heights, n, seed, skyline, maxH, landmarks, data)
 
-    val materials = if (kl) KualaLumpur.materials else Materials.pick(seed)
-    return City(data.toArray(), data.count, n, skyline, identity, movers, matrix, materials, preset, landmarks)
+    val screen = if (kl) Corners.screen(n) else null
+    return City(data.toArray(), data.count, n, skyline, identity, traffic.movers, matrix, materials, preset, landmarks, tones, inks, traffic.signals, screen)
   }
 
-  /** The random a module's tower or tile carries in its instance: its roof family and its flat colour. */
-  internal fun moduleRandom(x: Int, z: Int, seed: Int) = hash(x, z, seed + 31)
+  /**
+   * What a tower or tile carries for the flat code, as one exact whole number: 1 on the code's
+   * function patterns (finders, timing, alignment, format), plus twice its tone, its tower colour
+   * or paper shade ([FlatColours.tones]), plus 32 times its ink ([FlatColours.inks]).
+   */
+  private fun module(tone: Int, ink: Int, pattern: Boolean): Float = ((if (pattern) 1 else 0) + 2 * tone + 32 * ink).toFloat()
 
-  /** Which of the four material families a module with this random is built of, as in the shader. */
-  internal fun family(rnd: Float) = (rnd * 8f).toInt() % 4
+  /** Whether an instance's flat-code number marks a function pattern; see [module]. */
+  fun isPattern(module: Float) = (module.toInt() and 1) == 1
+
+  /** The random a module's tower or tile carries in its instance: the grain of its roof and panes. */
+  internal fun moduleRandom(x: Int, z: Int, seed: Int) = hash(x, z, seed + 31)
 
   private fun isBeacon(h: Float, maxH: Float) = h > 0f && h >= maxH * 0.92f
 

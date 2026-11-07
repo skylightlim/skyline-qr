@@ -29,6 +29,7 @@ WebGPU cannot start, a flat 2D code takes its place, so the link always scans.
 | --- | --- |
 | `skylineqr-core` | Pure Kotlin. Link parsing, identity, the QR matrix and the city planner. |
 | `skylineqr-compose` | The renderer and the `SkylineQrCode` composable. Brings the core along. |
+| `skylineqr-nfc` | Tap to share: the phone as an NFC tag carrying a saved card, tag reading and writing, and a QR scanner. See [docs/NFC.md](docs/NFC.md). |
 | `app` | The demo app. |
 
 ```kotlin
@@ -41,10 +42,10 @@ SkylineQrCode(
 )
 ```
 
-Tap to fold the city into its code and back. In the city, drag to turn it, pinch to zoom,
-double-tap to put the camera back, and long-press to bring a meteor down (it rebuilds itself). Time
+Tap to fold the city into its code and back. In the city, drag to turn it, pinch to zoom, and
+long-press to bring a meteor down (it rebuilds itself); `state.resetCamera()` puts the camera back. Time
 and weather only light the city; they never change it. `onEvent` reports lightning and meteors, so
-an app can add sound; the demo does, with CC0 recordings.
+an app can add sound of its own; the demo is silent.
 
 Share links (`https://skylightlim.github.io/city/?c=…`) open the exact city in the app, or a page
 with its plain QR code where the app is not installed.

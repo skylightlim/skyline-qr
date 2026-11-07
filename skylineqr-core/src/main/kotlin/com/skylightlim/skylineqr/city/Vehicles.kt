@@ -18,6 +18,7 @@ object Vehicles {
   }
 
   // Greys for detail parts (the shader reads them from the random slot).
+  private const val POLE = 0.16f
   private const val GLASS = 0.10f
   private const val RUBBER = 0.05f
   private const val METAL = 0.55f
@@ -40,6 +41,28 @@ object Vehicles {
           Mover.PLANE -> plane(part, mover.rnd)
         }
       }
+    }
+  }
+
+  /**
+   * Every traffic light at [time]: a dark metal pole and head, drawn a little larger than life like
+   * the telecom tower's head or the lamps would be lost, and the lit lamp, red at the top of the
+   * head, amber, green at the bottom, just proud of the face its traffic sees. The lamp's random
+   * slot carries its colour.
+   */
+  fun signals(signals: Signals, time: Float, sink: Sink) {
+    for (h in 0 until signals.count) {
+      val o = h * Signals.HEAD
+      val d = signals.heads
+      sink.box(d[o], 0.39f, d[o + 1], 0.045f, 0.78f, 0.045f, DETAIL, 0f, POLE, 0f, 1f)
+      sink.box(d[o], 0.71f, d[o + 1], 0.10f, 0.27f, 0.10f, DETAIL, 0f, POLE, 0f, 1f)
+      val state = signals.state(d[o + 4].toInt(), d[o + 5].toInt(), time)
+      val y = when (state) {
+        Signals.RED -> 0.80f
+        Signals.AMBER -> 0.71f
+        else -> 0.62f
+      }
+      sink.box(d[o] - d[o + 2] * 0.06f, y, d[o + 1] - d[o + 3] * 0.06f, 0.075f, 0.075f, 0.075f, CityPlanner.ROLE_SIGNAL, 0f, 0.1f + 0.4f * state, 0f, 1f)
     }
   }
 

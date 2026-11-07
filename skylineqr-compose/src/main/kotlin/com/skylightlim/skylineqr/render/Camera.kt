@@ -1,6 +1,7 @@
 package com.skylightlim.skylineqr.render
 
 import com.skylightlim.skylineqr.city.City
+import com.skylightlim.skylineqr.city.CityPlanner
 import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.sin
@@ -30,14 +31,19 @@ internal class Pose(
   val shiftY: Float,
   val viewProjection: FloatArray,
 ) {
+  /** The way from the eye through a point on screen, [u] and [v] from the top left, 0..1; not unit length. */
+  fun ray(u: Float, v: Float): FloatArray {
+    val x = (u * 2f - 1f) * tanHalfFov * aspect
+    val y = (1f - v * 2f - shiftY) * tanHalfFov
+    return FloatArray(3) { fwd[it] + right[it] * x + up[it] * y }
+  }
+
   /**
    * Where the ray through a point on screen ([u], [v] from the top left, 0..1) meets the ground,
    * or null if it points at the sky.
    */
   fun ground(u: Float, v: Float): FloatArray? {
-    val x = (u * 2f - 1f) * tanHalfFov * aspect
-    val y = (1f - v * 2f - shiftY) * tanHalfFov
-    val dir = FloatArray(3) { fwd[it] + right[it] * x + up[it] * y }
+    val dir = ray(u, v)
     if (dir[1] >= -1e-4f) return null
     val t = -eye[1] / dir[1]
     return floatArrayOf(eye[0] + dir[0] * t, 0f, eye[2] + dir[2] * t)
@@ -50,8 +56,8 @@ internal class Pose(
  */
 internal object Camera {
 
-  private const val BASE_YAW = 0.62f
-  private const val BASE_ELEVATION = 0.60f
+  private const val BASE_YAW = CityPlanner.VIEW_YAW
+  private const val BASE_ELEVATION = CityPlanner.VIEW_ELEVATION
   private const val FLAT_ELEVATION = 1.558f
   private const val BASE_FOV = 45f
   private const val FLAT_FOV = 12f

@@ -32,16 +32,23 @@ class Atmosphere(
    */
   val paper: FloatArray,
   /**
-   * The hour's light on the flat code's ink: near white by day, rose at dawn, amber at dusk,
-   * moonlight blue at night, greyed or warmed by the weather. Only its hue counts; see [FlatColours].
+   * The flat code's colour for this hour and weather: teal by day, ember at dawn and dusk, deep blue
+   * at night, greyed or warmed by the weather. Only its hue counts; see [FlatColours].
    */
-  val inkLight: FloatArray,
+  val ink: FloatArray,
+  /** What the code's odd modules lean toward: a neighbour of [ink], like an olive leaf in a green tree. */
+  val inkAccent: FloatArray,
   val rain: Float,
   val haze: Float,
   /** How wet the streets look: darker paving that reflects the sky. */
   val wet: Float,
   /** Lightning strikes. */
   val storm: Float,
+  /** Where the sun's disc stands in the sky; below the horizon, it is down. */
+  val sun: SunAndMoon.Place,
+  /** Where the moon's disc stands, and how much of it is lit, 0 new to 1 full. */
+  val moon: SunAndMoon.Place,
+  val moonLit: Float,
 )
 
 /**
@@ -76,7 +83,7 @@ object Atmospheres {
     FloatArray(3) { (air.skyHorizon[it] + (air.skyTop[it] - air.skyHorizon[it]) * 0.35f) * 0.92f }
 
   /**
-   * Around the flat code: a deeper colour of the same sky, so the pale code card stands out and the
+   * Around the flat code: a deeper colour of the same sky, so the code's pale plate stands out and the
    * whole screen still carries the hour. The renderer's sky shader uses the same blend.
    */
   fun surround(air: Atmosphere): FloatArray {
@@ -90,7 +97,41 @@ object Atmospheres {
     return (Math.floorMod(local, 86_400_000L) / 60_000.0).toFloat()
   }
 
-  fun at(time: TimeOfDay, weather: Weather, clockMinute: Float): Atmosphere {
+  /**
+   * Partway from [a] to [b] (2026-11-07: a change of hour or weather eases in instead of jumping):
+   * the light, the sky and the code's colours by [light], each part of the weather by its own
+   * share, so a storm can darken before its rain begins and its rain stop before it clears.
+   */
+  fun blend(a: Atmosphere, b: Atmosphere, light: Float, rain: Float, wet: Float, haze: Float, storm: Float): Atmosphere {
+    val dir = mix(a.sunDir, b.sunDir, light)
+    val length = kotlin.math.sqrt(dir[0] * dir[0] + dir[1] * dir[1] + dir[2] * dir[2]).coerceAtLeast(1e-4f)
+    return Atmosphere(
+      skyTop = mix(a.skyTop, b.skyTop, light),
+      skyHorizon = mix(a.skyHorizon, b.skyHorizon, light),
+      sunDir = FloatArray(3) { dir[it] / length },
+      sunColor = mix(a.sunColor, b.sunColor, light),
+      night = lerp(a.night, b.night, light),
+      window = mix(a.window, b.window, light),
+      paper = mix(a.paper, b.paper, light),
+      ink = mix(a.ink, b.ink, light),
+      inkAccent = mix(a.inkAccent, b.inkAccent, light),
+      rain = lerp(a.rain, b.rain, rain),
+      haze = lerp(a.haze, b.haze, haze),
+      wet = lerp(a.wet, b.wet, wet),
+      storm = lerp(a.storm, b.storm, storm),
+      sun = between(a.sun, b.sun, light),
+      moon = between(a.moon, b.moon, light),
+      moonLit = lerp(a.moonLit, b.moonLit, light),
+    )
+  }
+
+  /**
+   * The light and the air of [time] and [weather] at [clockMinute] of the phone's clock. Given
+   * [nowMillis], Now (2026-11-07, at the user's request) puts the sun and the moon where they
+   * really stand over Kuala Lumpur at that instant; the fixed hours, and Now without it, keep a sun
+   * on a fixed path and a moon high in the east after dark.
+   */
+  fun at(time: TimeOfDay, weather: Weather, clockMinute: Float, nowMillis: Long? = null): Atmosphere {
     val minute = minuteOf(time, clockMinute)
     val (a, b, t) = segment(minute)
     val night = lerp(a.night, b.night, t)
@@ -99,7 +140,8 @@ object Atmospheres {
     var sun = scale(mix(a.sun, b.sun, t), lerp(a.strength, b.strength, t))
     val window = mix(a.window, b.window, t)
     var paper = mix(a.paper, b.paper, t)
-    var inkLight = mix(a.inkLight, b.inkLight, t)
+    var ink = mix(a.ink, b.ink, t)
+    var inkAccent = mix(a.inkAccent, b.inkAccent, t)
 
     // Weather is laid over the hour. Clouds are grey by day and dim at night.
     val daylight = 1f - 0.85f * night
@@ -119,7 +161,8 @@ object Atmospheres {
         wet = 1f
         haze = 0.22f
         paper = tint(paper, 0.95f, 0.97f, 1.0f) // cooler, keeping the hour's hue
-        inkLight = mix(inkLight, rgb(0xB4C2DA), 0.5f)
+        ink = mix(ink, rgb(0x3A6F96), 0.55f)
+        inkAccent = mix(inkAccent, rgb(0x5B8FA0), 0.55f)
       }
       Weather.STORM -> {
         top = mix(top, scale(rgb(0x2A2F3D), 0.45f + 0.55f * daylight), 0.85f)
@@ -131,7 +174,8 @@ object Atmospheres {
         storm = 1f
         haze = 0.3f
         paper = tint(paper, 0.91f, 0.94f, 1.0f)
-        inkLight = mix(inkLight, rgb(0x98A2C2), 0.65f)
+        ink = mix(ink, rgb(0x3D5A80), 0.7f)
+        inkAccent = mix(inkAccent, rgb(0x5A8090), 0.7f)
       }
       Weather.HAZE -> {
         // Thick smoke haze: the sun turns a dim orange and banks of it drift over the city,
@@ -141,10 +185,13 @@ object Atmospheres {
         sun = floatArrayOf(sun[0] * 0.62f, sun[1] * 0.50f, sun[2] * 0.34f)
         haze = 1f
         paper = tint(paper, 1.0f, 0.98f, 0.94f) // warmer
-        inkLight = mix(inkLight, rgb(0xEAC68C), 0.55f)
+        ink = mix(ink, rgb(0xA37A22), 0.6f)
+        inkAccent = mix(inkAccent, rgb(0x8C8A3A), 0.6f)
       }
     }
 
+    val now = nowMillis?.takeIf { time == TimeOfDay.AUTO }
+    val clockSun = SunAndMoon.sunOnTheClock(minute)
     return Atmosphere(
       skyTop = top,
       skyHorizon = horizon,
@@ -153,13 +200,30 @@ object Atmospheres {
       night = windowsOn,
       window = window,
       paper = paper,
-      inkLight = inkLight,
+      ink = ink,
+      inkAccent = inkAccent,
       rain = rain,
       haze = haze,
       wet = wet,
       storm = storm,
+      sun = if (now != null) SunAndMoon.sun(now) else clockSun,
+      moon = if (now != null) SunAndMoon.moon(now) else if (clockSun.altitude < DARK) NIGHT_MOON else SET_MOON,
+      moonLit = if (now != null) SunAndMoon.lit(now) else NIGHT_MOON_LIT,
     )
   }
+
+  /** Partway from [a] to [b] across the sky, the short way round. */
+  private fun between(a: SunAndMoon.Place, b: SunAndMoon.Place, t: Float): SunAndMoon.Place {
+    val turn = ((b.azimuth - a.azimuth + 3f * PI.toFloat()) % (2f * PI.toFloat())) - PI.toFloat()
+    return SunAndMoon.Place(lerp(a.altitude, b.altitude, t), a.azimuth + turn * t)
+  }
+
+  /** How far below the horizon the sun is when a fixed hour's moon comes out: six degrees, civil dusk. */
+  private const val DARK = -0.105f
+  /** The fixed hours' moon: high in the east-south-east after dark, nearly full; set in the west by day. */
+  private val NIGHT_MOON = SunAndMoon.Place(0.87f, 2.0f)
+  private val SET_MOON = SunAndMoon.Place(-0.35f, 4.5f)
+  private const val NIGHT_MOON_LIT = 0.92f
 
   /** One keyframe. Its colour arrays are never written, so keyframes may share them. */
   private class Sky(
@@ -171,19 +235,22 @@ object Atmospheres {
     val night: Float,
     val window: FloatArray,
     val paper: FloatArray,
-    val inkLight: FloatArray,
+    val ink: FloatArray,
+    val inkAccent: FloatArray,
   ) {
     /** The same sky, held at another minute. */
-    fun at(minute: Int) = Sky(minute, top, horizon, sun, strength, night, window, paper, inkLight)
+    fun at(minute: Int) = Sky(minute, top, horizon, sun, strength, night, window, paper, ink, inkAccent)
   }
 
-  private fun sky(minute: Int, top: Int, horizon: Int, sun: Int, strength: Float, night: Float, window: Int, paper: Int, inkLight: Int) =
-    Sky(minute, rgb(top), rgb(horizon), rgb(sun), strength, night, rgb(window), rgb(paper), rgb(inkLight))
+  private fun sky(minute: Int, top: Int, horizon: Int, sun: Int, strength: Float, night: Float, window: Int, paper: Int, ink: Int, inkAccent: Int) =
+    Sky(minute, rgb(top), rgb(horizon), rgb(sun), strength, night, rgb(window), rgb(paper), rgb(ink), rgb(inkAccent))
 
-  private val NIGHT = sky(0, 0x060B1F, 0x1A2650, 0x9EB8F2, 0.36f, 1f, 0xFFD98C, 0xD3DCF0, 0x8CA8FF)
-  private val DAWN = sky(SUNRISE, 0x7D93C9, 0xF7C4A0, 0xFFC08A, 0.90f, 0.35f, 0xFFD08A, 0xF4DEE2, 0xFFB0B8)
-  private val DAY = sky(9 * 60, 0x6FA8E6, 0xE3EEF5, 0xFFF3DC, 1.08f, 0f, 0xFFE0A0, 0xDCEBF8, 0xFFF8F0)
-  private val DUSK = sky(SUNSET, 0x29386F, 0xF49558, 0xFF9A55, 1.05f, 0.40f, 0xFFC46B, 0xF8DCC6, 0xFFA868)
+  // The code's colours are nearly opposite each other across each change of hour, so the clock
+  // carries them through grey on the way, never through purple.
+  private val NIGHT = sky(0, 0x060B1F, 0x1A2650, 0x9EB8F2, 0.36f, 1f, 0xFFD98C, 0xD3DCF0, 0x1F78C8, 0x1796B0)
+  private val DAWN = sky(SUNRISE, 0x7D93C9, 0xF7C4A0, 0xFFC08A, 0.90f, 0.35f, 0xFFD08A, 0xF4DEE2, 0xE0783A, 0xE0A030)
+  private val DAY = sky(9 * 60, 0x6FA8E6, 0xE3EEF5, 0xFFF3DC, 1.08f, 0f, 0xFFE0A0, 0xDCEBF8, 0x07917F, 0x1F8FC4)
+  private val DUSK = sky(SUNSET, 0x29386F, 0xF49558, 0xFF9A55, 1.05f, 0.40f, 0xFFC46B, 0xF8DCC6, 0xD96A1E, 0xC8402E)
 
   private val KEYS =
     listOf(

@@ -7,6 +7,7 @@ import android.os.Looper
 import android.util.Log
 import android.view.Choreographer
 import android.view.Surface
+import androidx.webgpu.AddressMode
 import androidx.webgpu.BlendFactor
 import androidx.webgpu.BlendOperation
 import androidx.webgpu.BufferBindingType
@@ -17,6 +18,7 @@ import androidx.webgpu.DeviceLostCallback
 import androidx.webgpu.DeviceLostReason
 import androidx.webgpu.ErrorFilter
 import androidx.webgpu.FilterMode
+import androidx.webgpu.GPUBindGroup
 import androidx.webgpu.GPUBindGroupDescriptor
 import androidx.webgpu.GPUBindGroupEntry
 import androidx.webgpu.GPUBindGroupLayout
@@ -29,6 +31,7 @@ import androidx.webgpu.GPUBufferBindingLayout
 import androidx.webgpu.GPUBufferDescriptor
 import androidx.webgpu.GPUColor
 import androidx.webgpu.GPUColorTargetState
+import androidx.webgpu.GPUCommandEncoder
 import androidx.webgpu.GPUDepthStencilState
 import androidx.webgpu.GPUDevice
 import androidx.webgpu.GPUDeviceDescriptor
@@ -86,11 +89,10 @@ import com.skylightlim.skylineqr.city.Atmosphere
 import com.skylightlim.skylineqr.city.Atmospheres
 import com.skylightlim.skylineqr.city.City
 import com.skylightlim.skylineqr.city.CityPlanner
-import com.skylightlim.skylineqr.city.FlatColours
-import com.skylightlim.skylineqr.city.Materials
 import com.skylightlim.skylineqr.city.Vehicles
 import com.skylightlim.skylineqr.city.TimeOfDay
 import com.skylightlim.skylineqr.city.Weather
+import com.skylightlim.skylineqr.compose.SkyPart
 import com.skylightlim.skylineqr.compose.SkylineEvent
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -161,8 +163,30 @@ internal class CityRenderer(
       post { wake() }
     }
 
+  /**
+   * Whether the weather's clouds show (2026-11-07, at the user's request, set from a long press on
+   * one). Off, the clear sky's clouds and a storm's deck blow away downwind, and lightning comes
+   * from high above; on, they blow back in from upwind.
+   */
+  @Volatile
+  var clouds = true
+    set(value) {
+      if (field == value) return
+      field = value
+      post { wake() }
+    }
+
   /** Android's "Remove animations" is on: no lightning, gentler rain, an instant morph. */
   @Volatile var calm = false
+
+  /** The billboard's messages, shown on the city's screen if it has one; none, no screen. */
+  @Volatile
+  var billboard: List<String> = emptyList()
+    set(value) {
+      if (field == value) return
+      field = value
+      post { wake() }
+    }
 
   /** Frames presented so far. The on-device test reads it to check the frame rate. */
   @Volatile
@@ -219,12 +243,35 @@ internal class CityRenderer(
   /** Tall towers lightning goes for, x, z and height each, for [rodsFor]. */
   private var rods = FloatArray(0)
   private var rodsFor: City? = null
+  /** The light and the air as last shown, which [atmosphere] eases toward [target]. */
   private var atmosphere: Atmosphere? = null
+  private var target: Atmosphere? = null
+  private var shownFor: Pair<TimeOfDay, Weather>? = null
+  private var blendFrom: Atmosphere? = null
+  private var blendAt = 0f
+  private var blendFor = 1f
+
+  /** See [weatherSky]; [skyStarted] is false until the first frame takes the weather as it is. */
+  private val shapes = SkyParts.Amounts()
+  private var skyStarted = false
+  /** How far haze's front has rolled across the plate as it comes, 0 to 1. */
+  private var hazeFront = 1f
+  /** The wind haze blows in on, 0 to 1: how many streaks of it show. */
+  private var wind = 0f
+  /** The storm cloud the current bolt leaves; -1 when it comes from high above. */
+  private var boltCloud = -1
+  /** How many boxes of [traffic] the last frame drew, for a long press to look among. */
+  private var pickable = 0
   private var atmosphereFor: Pair<TimeOfDay, Weather>? = null
   private var atmosphereAt = 0L
   private val morph = Morph()
   private val frame = FloatArray(Wgsl.FRAME_FLOATS)
   private val frameBytes = direct(Wgsl.FRAME_FLOATS * 4)
+  private val post = FloatArray(4)
+  private val postBytes = direct(16)
+  private var board = Billboard.NONE
+  private var boardFor: List<String> = emptyList()
+  private val screen = FloatArray(Billboard.FLOATS)
   private val traffic = FloatArray(MAX_PARTS * CityPlanner.STRIDE)
   private val trafficBytes = direct(traffic.size * 4)
   private val pa = FloatArray(4)
@@ -265,6 +312,20 @@ internal class CityRenderer(
       main.post { onEvent(SkylineEvent.METEOR_FALLING) }
       wake()
     }
+  }
+
+  /**
+   * What of the sky lies under ([u], [v]) on screen, 0..1 from the top left, as the last frame drew
+   * it: a cloud, the sun or the moon, or null for none (or for the flat code). [onResult] runs on
+   * the main thread.
+   */
+  fun pick(u: Float, v: Float, onResult: (SkyPart?) -> Unit) {
+    val posted = post {
+      val pose = lastPose
+      val found = if (pose == null || morph.heading > 0f) null else SkyParts.pick(traffic, pickable, pose.eye, pose.ray(u, v))
+      main.post { onResult(found) }
+    }
+    if (!posted) main.post { onResult(null) }
   }
 
   /** Starts drawing into [androidSurface]. */
@@ -404,7 +465,7 @@ internal class CityRenderer(
       )
     )
     targets?.close()
-    targets = Targets(device, width, height, format)
+    targets = Targets(device, width, height, resources!!)
   }
 
   private fun releaseSurface() {
@@ -444,18 +505,100 @@ internal class CityRenderer(
     main.post { onFailure(error) }
   }
 
-  /** The light and the air right now. Auto follows the clock, so it is refreshed every second. */
-  private fun atmosphere(nanos: Long): Atmosphere {
+  /**
+   * The light and the air the hour and weather ask for. Auto follows the clock, and the real sun and
+   * moon over Kuala Lumpur, so it is refreshed every second.
+   */
+  private fun targetAtmosphere(nanos: Long): Atmosphere {
     val key = time to weather
-    val cached = atmosphere
+    val cached = target
     if (cached != null && key == atmosphereFor && (key.first != TimeOfDay.AUTO || nanos - atmosphereAt < 1_000_000_000L)) {
       return cached
     }
-    return Atmospheres.at(key.first, key.second, Atmospheres.clockMinute()).also {
-      atmosphere = it
+    val now = System.currentTimeMillis()
+    return Atmospheres.at(key.first, key.second, Atmospheres.clockMinute(now), nowMillis = now).also {
+      target = it
       atmosphereFor = key
       atmosphereAt = nanos
     }
+  }
+
+  /**
+   * The light and the air as shown (2026-11-07): a change of hour eases in over [TIME_EASE]
+   * seconds, a change of weather over [WEATHER_EASE] in stages. Into rain or a storm the sky darkens
+   * first, the rain begins once the clouds are mostly in and the lightning last; out of it the rain
+   * and lightning stop first and the sky clears after. With animations off it changes at once.
+   */
+  private fun atmosphere(nanos: Long): Atmosphere {
+    val goal = targetAtmosphere(nanos)
+    val key = time to weather
+    val before = shownFor
+    if (before == null || calm) {
+      shownFor = key
+      atmosphere = goal
+      return goal
+    }
+    if (key != before) {
+      blendFrom = atmosphere ?: goal
+      blendAt = seconds
+      blendFor = if (key.second != before.second) WEATHER_EASE else TIME_EASE
+      shownFor = key
+      // Haze rolls in from upwind each time it comes out of clear air, rather than appearing
+      // everywhere at once. Going, it thins away everywhere together.
+      if (key.second == Weather.HAZE && (blendFrom?.haze ?: 0f) < 0.05f) hazeFront = 0f
+    }
+    val from = blendFrom ?: return goal.also { atmosphere = it }
+    val e = (seconds - blendAt) / blendFor
+    if (e >= 1f) {
+      blendFrom = null
+      atmosphere = goal
+      return goal
+    }
+    fun span(start: Float, end: Float) = smooth(((e - start) / (end - start)).coerceIn(0f, 1f))
+    val raining = goal.rain > from.rain
+    val air = Atmospheres.blend(
+      from,
+      goal,
+      light = span(0f, 1f),
+      rain = if (raining) span(0.45f, 1f) else span(0f, 0.3f),
+      wet = if (raining) span(0.5f, 1f) else span(0f, 1f),
+      haze = span(0f, 1f),
+      storm = if (goal.storm > from.storm) span(0.75f, 1f) else span(0f, 0.2f),
+    )
+    atmosphere = air
+    return air
+  }
+
+  /**
+   * Where each weather's own sky is (see [SkyParts.Amounts]): the clear sky's clouds and a storm's
+   * deck blow in from upwind when their weather comes and on downwind when it goes, or when
+   * [clouds] is turned off, at a steady pace; the sun and the moon and the deck's darkness ease a
+   * little behind the light; haze rolls in at a steady wind's pace, its wind streaks a little ahead
+   * of it.
+   */
+  private fun weatherSky(dt: Float) {
+    val fairWanted = clouds && weather == Weather.CLEAR
+    val deckWanted = clouds && (weather == Weather.STORM || weather == Weather.RAIN)
+    val shine = if (weather == Weather.CLEAR || weather == Weather.HAZE) 1f else 0f
+    val dark = if (weather == Weather.RAIN) 0.7f else 1f
+    val gusts = if (weather == Weather.HAZE) 1f else 0f
+    if (!skyStarted || calm) {
+      skyStarted = true
+      shapes.fair = if (fairWanted) 0f else 1f
+      shapes.deck = if (deckWanted) 0f else 1f
+      shapes.shine = shine
+      shapes.overcast = dark
+      wind = gusts
+      hazeFront = 1f
+      return
+    }
+    fun toward(now: Float, to: Float) = now + (to - now) * (1f - exp(-dt / (if (to > now) SKY_IN else SKY_OUT)))
+    shapes.fair = SkyParts.travel(shapes.fair, fairWanted, dt)
+    shapes.deck = SkyParts.travel(shapes.deck, deckWanted, dt)
+    shapes.shine = toward(shapes.shine, shine)
+    shapes.overcast = toward(shapes.overcast, dark)
+    wind = toward(wind, gusts)
+    hazeFront = min(1f, hazeFront + dt / HAZE_IN)
   }
 
   /** Draws one frame. Returns whether another one is needed. */
@@ -473,12 +616,12 @@ internal class CityRenderer(
 
       val shot = snapshotRequest
       if (shot != null && snapshotFlat) morph.finish(flat = true)
-      // The camera swings overhead in the first half; the city folds block by block until the end.
-      val progress = morph.at(nanos)
-      val swing = Morph.swing(progress)
-      val fold = Morph.fold(progress)
+      // The camera swings over the whole morph; the city folds block by block, landing before it.
+      val swing = morph.swing(nanos)
+      val fold = morph.fold(nanos)
       val current = city
       upload(queue, current)
+      if (billboard != boardFor) drawBillboard(queue, resources)
       // Glide toward the person's orbit and zoom: quick enough to feel direct, smooth on release.
       val target = view
       val k = 1f - exp(-dt * 16f)
@@ -489,6 +632,7 @@ internal class CityRenderer(
           shown.zoom + (target.zoom - shown.zoom) * k,
         )
       val air = atmosphere(nanos)
+      weatherSky(dt)
       val impact = impactSeconds()
       if (impact >= 0f && !landed) {
         landed = true
@@ -511,6 +655,7 @@ internal class CityRenderer(
       writeFrame(queue, resources, pose, Camera.light(current, air.sunDir), fold, current, air, impact)
       val moving = writeTraffic(queue, resources, current, fold, impact)
       val drops = (MAX_DROPS * air.rain * (if (calm) 0.4f else 1f) * (1f - fold)).toInt()
+      val gusts = if (calm) 0 else (MAX_GUSTS * wind * (1f - fold)).toInt()
 
       val frameTexture = surface.getCurrentTexture()
       when (frameTexture.status) {
@@ -526,7 +671,7 @@ internal class CityRenderer(
       }
       frameTexture.texture.use { texture ->
         texture.createView().use { view ->
-          encode(queue, pipelines, resources, targets, view, current, moving, drops, air, shadows = fold < 0.999f)
+          encode(queue, pipelines, resources, targets, view, current, moving, drops, gusts, air, fold)
         }
         surface.present()
       }
@@ -534,10 +679,10 @@ internal class CityRenderer(
 
       if (shot != null) {
         snapshotRequest = null
-        capture(queue, pipelines, resources, targets, current, moving, drops, air, shot)
+        capture(queue, pipelines, resources, targets, current, moving, drops, gusts, air, fold, shot)
       }
       // The flat code is still: once the morph settles, draw again only when something changes.
-      return !(progress >= 1f && morph.settled(nanos))
+      return !(morph.heading == 1f && morph.settled(nanos))
     } catch (e: Throwable) {
       failNow(e)
       return false
@@ -553,15 +698,16 @@ internal class CityRenderer(
     city: City?,
     moving: Int,
     drops: Int,
+    gusts: Int,
     air: Atmosphere,
-    shadows: Boolean,
+    fold: Float,
   ) {
     val sky = air.skyHorizon
     val clear = GPUColor(sky[0] * 0.85, sky[1] * 0.85, sky[2] * 0.85, 1.0)
     val instances = instances
     val device = gpu!!.device
     device.createCommandEncoder().use { encoder ->
-      if (shadows && city != null && instances != null) {
+      if (fold < 0.999f && city != null && instances != null) {
         // The city from the sun, depth only: what the main pass compares against for shadows.
         encoder
           .beginRenderPass(
@@ -590,7 +736,7 @@ internal class CityRenderer(
                 GPURenderPassColorAttachment(
                   clearValue = clear,
                   view = targets.colorView,
-                  resolveTarget = view,
+                  resolveTarget = targets.hdrView,
                   loadOp = LoadOp.Clear,
                   storeOp = StoreOp.Discard,
                 )
@@ -616,21 +762,65 @@ internal class CityRenderer(
             pass.setPipeline(pipelines.rain)
             pass.draw(6, drops)
           }
+          // Haze's wind streaks: the same pipeline, from instance GUST_BASE on, a ribbon each.
+          if (gusts > 0) {
+            pass.setPipeline(pipelines.rain)
+            pass.draw(Wgsl.GUST_VERTICES, gusts, 0, Wgsl.GUST_BASE)
+          }
           pass.end()
         }
+      // The glow: halve down the bloom chain from what is brighter than white, then add each level
+      // back onto the one above. None in the flat code, which the composite passes through as is.
+      val strength = BLOOM * (1f - fold)
+      post[0] = BLOOM_THRESHOLD
+      post[1] = BLOOM_KNEE
+      post[2] = strength
+      post[3] = fold
+      postBytes.asFloatBuffer().put(post)
+      queue.writeBuffer(resources.post, 0, postBytes)
+      if (strength > 0f) {
+        screenPass(encoder, targets.bloomViews[0], pipelines.prefilter, targets.downGroups[0], load = false)
+        for (i in 1 until BLOOM_LEVELS) screenPass(encoder, targets.bloomViews[i], pipelines.down, targets.downGroups[i], load = false)
+        for (i in BLOOM_LEVELS - 2 downTo 0) screenPass(encoder, targets.bloomViews[i], pipelines.up, targets.upGroups[i], load = true)
+      }
+      screenPass(encoder, view, pipelines.composite, targets.compositeGroup, load = false)
       encoder.finish().use { commands -> queue.submit(arrayOf(commands)) }
     }
+  }
+
+  /** One full-screen triangle into [target], reading what [group] binds. */
+  private fun screenPass(encoder: GPUCommandEncoder, target: GPUTextureView, pipeline: GPURenderPipeline, group: GPUBindGroup, load: Boolean) {
+    encoder
+      .beginRenderPass(
+        GPURenderPassDescriptor(
+          colorAttachments =
+            arrayOf(
+              GPURenderPassColorAttachment(
+                view = target,
+                loadOp = if (load) LoadOp.Load else LoadOp.Clear,
+                storeOp = StoreOp.Store,
+                clearValue = GPUColor(0.0, 0.0, 0.0, 1.0),
+              )
+            )
+        )
+      )
+      .use { pass ->
+        pass.setPipeline(pipeline)
+        pass.setBindGroup(0, group)
+        pass.draw(3)
+        pass.end()
+      }
   }
 
   private fun drawBlocks(pass: GPURenderPassEncoder, resources: Resources, instances: GPUBuffer, count: Int, moving: Int) {
     pass.setVertexBuffer(0, resources.cube)
     pass.setIndexBuffer(resources.index, IndexFormat.Uint16)
     pass.setVertexBuffer(1, instances)
-    pass.drawIndexed(CUBE_INDICES.size, count)
+    pass.drawIndexed(FrameData.CUBE_INDICES.size, count)
     if (moving > 0) {
       // Traffic is the same cube with a per-frame instance buffer.
       pass.setVertexBuffer(1, resources.traffic)
-      pass.drawIndexed(CUBE_INDICES.size, moving)
+      pass.drawIndexed(FrameData.CUBE_INDICES.size, moving)
     }
   }
 
@@ -643,7 +833,9 @@ internal class CityRenderer(
     city: City?,
     moving: Int,
     drops: Int,
+    gusts: Int,
     air: Atmosphere,
+    fold: Float,
     onBitmap: (Bitmap) -> Unit,
   ) {
     val device = gpu!!.device
@@ -657,8 +849,7 @@ internal class CityRenderer(
           format = format,
         )
       )
-    // The shadow map from this frame is still current, so the copy needs no shadow pass of its own.
-    target.createView().use { encode(queue, pipelines, resources, targets, it, city, moving, drops, air, shadows = false) }
+    target.createView().use { encode(queue, pipelines, resources, targets, it, city, moving, drops, gusts, air, fold) }
     // Copies out of a texture need rows padded to 256 bytes.
     val rowBytes = (w * 4 + 255) / 256 * 256
     val size = rowBytes.toLong() * h
@@ -720,10 +911,22 @@ internal class CityRenderer(
     val near = (0 until rods.size / 3).filter { eye == null || rods[it * 3] * eye[0] + rods[it * 3 + 1] * eye[2] > 0f }
     val pool = near.ifEmpty { (0 until rods.size / 3).toList() }
     if (pool.isEmpty()) return
-    val k = pool[min(pool.size - 1, (unit(strike * 7 + 3) * pool.size).toInt())]
+    // Lightning comes out of a cloud (2026-11-07, at the user's request), so while the deck is over
+    // the city it goes for a roof with a cloud close over it, then leaves from under that cloud.
+    // With the clouds off, or the deck still blowing in, it comes from high above.
+    val decked = abs(shapes.deck) < DECKED
+    val cloud = FloatArray(4)
+    fun nearest(rod: Int) = SkyParts.nearestStormCloud(rods[rod * 3], rods[rod * 3 + 1], city, seconds, calm, shapes)
+    val covered = if (!decked) emptyList() else pool.filter { rod ->
+      SkyParts.stormCloud(nearest(rod), city, SkyParts.drift(seconds, calm), shapes, cloud)
+      hypot(cloud[0] - rods[rod * 3], cloud[2] - rods[rod * 3 + 1]) < cloud[3] * UNDER_CLOUD
+    }
+    val choice = covered.ifEmpty { pool }
+    val k = choice[min(choice.size - 1, (unit(strike * 7 + 3) * choice.size).toInt())]
     boltX = rods[k * 3]
     boltZ = rods[k * 3 + 1]
     boltTop = rods[k * 3 + 2]
+    boltCloud = if (decked) nearest(k) else -1
     boltAimed = true
     if (unit(strike * 5 + 1) < 0.55f && damageAt < 0f && fold < 0.01f && morph.heading == 0f && meteorAt < 0f) {
       damageAt = seconds
@@ -762,50 +965,35 @@ internal class CityRenderer(
     air: Atmosphere,
     impact: Float,
   ) {
-    val f = frame
-    System.arraycopy(pose.viewProjection, 0, f, 0, 16)
-    System.arraycopy(light, 0, f, 16, 16)
-    var o = 32
-    fun put4(x: Float, y: Float, z: Float, w: Float) {
-      f[o] = x
-      f[o + 1] = y
-      f[o + 2] = z
-      f[o + 3] = w
-      o += 4
-    }
-    fun put(v: FloatArray, w: Float = 0f, scale: Float = 1f) = put4(v[0] * scale, v[1] * scale, v[2] * scale, w)
-
-    val materials = city?.materials ?: Materials.recipes.first()
-    val sunLuma = 0.2126f * air.sunColor[0] + 0.7152f * air.sunColor[1] + 0.0722f * air.sunColor[2]
-    // Strong sun throws dark shadows; overcast, haze and moonlight only soft ones.
-    val shadowStrength = (0.35f + 0.6f * min(1f, sunLuma / 0.9f)) * (1f - 0.5f * air.night)
     val flash = if (calm) 0f else lightning(seconds, air.storm)
-
-    put(pose.eye, fold)
-    put(pose.right, pose.tanHalfFov)
-    put(pose.up, pose.aspect)
-    put(pose.fwd, seconds)
-    put(air.sunDir, air.night)
-    put(air.sunColor, shadowStrength)
-    put(air.skyTop, air.rain)
-    put(air.skyHorizon, air.haze)
-    put(PLAZA, air.wet)
-    put(air.window, flash)
-    put(air.paper)
-    put(air.inkLight)
-    put(materials.vehicle)
-    // The first roof's w names the family the flat code's function patterns are inked in.
-    val anchor = FlatColours.anchorFamily(materials).toFloat()
-    for (i in 0 until 4) put4(materials.families[i * 3], materials.families[i * 3 + 1], materials.families[i * 3 + 2], if (i == 0) anchor else 0f)
-    for (i in 0 until 8) put4(materials.landmarks[i * 3], materials.landmarks[i * 3 + 1], materials.landmarks[i * 3 + 2], 0f)
-    put4(city?.plateHalf ?: 20f, city?.maxHeight ?: 4f, if (calm) 0.45f else 1f, pose.shiftY)
-    put4(meteorX, meteorZ, if (impact >= 0f) impact else -1f, if (impact >= 0f) exp(-impact * 7f) else 0f)
-    put4(damageX, damageZ, damageSeconds(), 0f)
-    put4(boltX, boltZ, boltTop, if (boltAimed && flash > 0f) 1f else 0f)
-    check(o == f.size) { "frame uniform packed $o of ${f.size} floats" }
-
+    FrameData.pack(
+      frame, pose, light, fold, city, air, seconds, flash, calm, morph.raising, hazeFront, wind,
+      meteor = floatArrayOf(meteorX, meteorZ, if (impact >= 0f) impact else -1f, if (impact >= 0f) exp(-impact * 7f) else 0f),
+      damage = floatArrayOf(damageX, damageZ, damageSeconds(), 0f),
+      bolt = floatArrayOf(boltX, boltZ, boltTop, if (boltAimed && flash > 0f) 1f else 0f),
+      screen = screen.also { board.state(seconds, calm, it) },
+    )
+    val f = frame
     frameBytes.asFloatBuffer().put(f)
     queue.writeBuffer(resources.frame, 0, frameBytes)
+  }
+
+  /** Draws the billboard's messages into its texture, and times them. */
+  private fun drawBillboard(queue: GPUQueue, resources: Resources) {
+    val messages = billboard
+    boardFor = messages
+    val drawn = BillboardAtlas.draw(messages)
+    if (drawn.widths.isEmpty()) {
+      board = Billboard.NONE
+      return
+    }
+    queue.writeTexture(
+      GPUTexelCopyTextureInfo(resources.atlas),
+      drawn.pixels,
+      GPUExtent3D(BillboardAtlas.WIDTH, BillboardAtlas.ROW * BillboardAtlas.ROWS),
+      GPUTexelCopyBufferLayout(0, BillboardAtlas.WIDTH, BillboardAtlas.ROW * BillboardAtlas.ROWS),
+    )
+    board = Billboard(drawn.widths, BillboardAtlas.VIEW)
   }
 
   /**
@@ -814,6 +1002,7 @@ internal class CityRenderer(
    */
   private fun writeTraffic(queue: GPUQueue, resources: Resources, city: City?, fold: Float, impact: Float): Int {
     val shrink = 1f - fold
+    pickable = 0
     if (city == null || shrink < 0.05f || city.movers.isEmpty()) return 0
 
     var count = 0
@@ -845,11 +1034,20 @@ internal class CityRenderer(
       }
       Vehicles.emit(m, seconds, box, pa)
     }
+    Vehicles.signals(city.signals, seconds, box)
+    val spot = city.screen
+    if (spot != null && board !== Billboard.NONE) {
+      box.box(spot[0], spot[1], spot[2], spot[3], spot[4], 0.08f, CityPlanner.ROLE_SCREEN, 0f, 0f, 0f, 1f)
+    }
     if (meteorAt >= 0f) meteorParts({ x, y, z, sx, sy, sz, role, glow, rnd, yaw, taper -> box.box(x, y, z, sx, sy, sz, role, glow, rnd, yaw, taper) }, impact)
     val flash = if (calm) 0f else lightning(seconds, atmosphere?.storm ?: 0f)
-    if (boltAimed && flash > 0.12f) boltParts(box, city, flash)
+    val bolting = boltAimed && flash > 0.12f
+    if (bolting) SkyParts.bolt(box, city, seconds, calm, shapes, lastStrike, boltCloud, boltX, boltZ, boltTop, flash)
     val damage = damageSeconds()
     if (damage >= 0f) fragmentParts(box, damage)
+    val air = atmosphere
+    if (air != null) SkyParts.emit(box, city, seconds, calm, shapes, air, lit = if (boltAimed) boltCloud else -1, flash = flash)
+    pickable = count
     if (count == 0) return 0
     trafficBytes.asFloatBuffer().put(traffic)
     queue.writeBuffer(resources.traffic, 0, trafficBytes)
@@ -882,41 +1080,6 @@ internal class CityRenderer(
       for (turn in floatArrayOf(0f, 0.785f)) {
         box(meteorX, grow * 0.3f * fade, meteorZ, grow * fade, grow * 0.6f * fade, grow * fade, CityPlanner.ROLE_METEOR, 1f - impact * 1.6f, 0.5f, turn, 0.3f)
       }
-    }
-  }
-
-  /**
-   * The bolt: from high above the city down onto the struck roof, in steps that jog sideways less
-   * and less, each a glowing column and a rung to the next. Boxes only turn about their axis, so
-   * a bolt is drawn as a staircase. Its jitter is seeded by the strike, so it holds still while it
-   * flickers.
-   */
-  private fun boltParts(box: Vehicles.Sink, city: City, flash: Float) {
-    val sky = city.maxHeight + 14f
-    var px = boltX + (unit(lastStrike * 13 + 1) - 0.5f) * 7f
-    var pz = boltZ + (unit(lastStrike * 13 + 2) - 0.5f) * 7f
-    val startX = px
-    val startZ = pz
-    var py = sky
-    val steps = 9
-    for (i in 1..steps) {
-      val t = i / steps.toFloat()
-      val wobble = 1.6f * (1f - t)
-      val nx = startX + (boltX - startX) * t + (unit(lastStrike * 13 + i * 2 + 3) - 0.5f) * wobble
-      val nz = startZ + (boltZ - startZ) * t + (unit(lastStrike * 13 + i * 2 + 4) - 0.5f) * wobble
-      val ny = sky + (boltTop - sky) * t
-      val w = 0.22f - 0.08f * t
-      box.box(px, (py + ny) / 2f, pz, w, py - ny, w, CityPlanner.ROLE_BOLT, flash, 0.5f, 0f, 1f)
-      val dx = nx - px
-      val dz = nz - pz
-      val run = hypot(dx, dz)
-      if (run > 0.01f) {
-        val yaw = kotlin.math.atan2(dz, dx)
-        box.box((px + nx) / 2f, ny, (pz + nz) / 2f, run + w, w, w, CityPlanner.ROLE_BOLT, flash, 0.5f, yaw, 1f)
-      }
-      px = nx
-      py = ny
-      pz = nz
     }
   }
 
@@ -987,6 +1150,12 @@ internal class CityRenderer(
                 visibility = ShaderStage.Fragment,
                 sampler = GPUSamplerBindingLayout(type = SamplerBindingType.Comparison),
               ),
+              GPUBindGroupLayoutEntry(
+                binding = 3,
+                visibility = ShaderStage.Fragment,
+                texture = GPUTextureBindingLayout(sampleType = TextureSampleType.Float, viewDimension = TextureViewDimension._2D),
+              ),
+              GPUBindGroupLayoutEntry(binding = 4, visibility = ShaderStage.Fragment, sampler = GPUSamplerBindingLayout(type = SamplerBindingType.Filtering)),
             )
         )
       )
@@ -1010,6 +1179,26 @@ internal class CityRenderer(
       device.createSampler(
         GPUSamplerDescriptor(magFilter = FilterMode.Linear, minFilter = FilterMode.Linear, compare = CompareFunction.LessEqual)
       )
+    /** The billboard's messages, one row each; see [BillboardAtlas]. Empty until it has some. */
+    val atlas =
+      device.createTexture(
+        GPUTextureDescriptor(
+          usage = TextureUsage.TextureBinding or TextureUsage.CopyDst,
+          size = GPUExtent3D(BillboardAtlas.WIDTH, BillboardAtlas.ROW * BillboardAtlas.ROWS),
+          format = TextureFormat.R8Unorm,
+          label = "billboard",
+        )
+      )
+    private val atlasView: GPUTextureView = atlas.createView()
+    private val atlasSampler =
+      device.createSampler(
+        GPUSamplerDescriptor(
+          magFilter = FilterMode.Linear,
+          minFilter = FilterMode.Linear,
+          addressModeU = AddressMode.ClampToEdge,
+          addressModeV = AddressMode.ClampToEdge,
+        )
+      )
     val sceneGroup =
       device.createBindGroup(
         GPUBindGroupDescriptor(
@@ -1019,23 +1208,65 @@ internal class CityRenderer(
               GPUBindGroupEntry(binding = 0, buffer = frame),
               GPUBindGroupEntry(binding = 1, textureView = shadowView),
               GPUBindGroupEntry(binding = 2, sampler = shadowSampler),
+              GPUBindGroupEntry(binding = 3, textureView = atlasView),
+              GPUBindGroupEntry(binding = 4, sampler = atlasSampler),
             ),
         )
       )
     val casterGroup =
       device.createBindGroup(GPUBindGroupDescriptor(layout = casterLayout, entries = arrayOf(GPUBindGroupEntry(binding = 0, buffer = frame))))
-    val cube = staticBuffer(device, queue, BufferUsage.Vertex, direct(CUBE_MESH.size * 4).also { it.asFloatBuffer().put(CUBE_MESH) }, "cube")
-    val index = staticBuffer(device, queue, BufferUsage.Index, direct(CUBE_INDICES.size * 2).also { it.asShortBuffer().put(CUBE_INDICES) }, "cube indices")
+    val cube = staticBuffer(device, queue, BufferUsage.Vertex, direct(FrameData.CUBE_MESH.size * 4).also { it.asFloatBuffer().put(FrameData.CUBE_MESH) }, "cube")
+    val index = staticBuffer(device, queue, BufferUsage.Index, direct(FrameData.CUBE_INDICES.size * 2).also { it.asShortBuffer().put(FrameData.CUBE_INDICES) }, "cube indices")
     val traffic = device.createBuffer(GPUBufferDescriptor(BufferUsage.Vertex or BufferUsage.CopyDst, MAX_PARTS * CityPlanner.STRIDE * 4L, "traffic"))
 
+    /** The glow passes' settings, and what they read: a source, a sampler, and a second texture. */
+    val post = device.createBuffer(GPUBufferDescriptor(BufferUsage.Uniform or BufferUsage.CopyDst, 16L, "post"))
+    val postLayout: GPUBindGroupLayout =
+      device.createBindGroupLayout(
+        GPUBindGroupLayoutDescriptor(
+          entries =
+            arrayOf(
+              GPUBindGroupLayoutEntry(binding = 0, visibility = ShaderStage.Fragment, buffer = GPUBufferBindingLayout(type = BufferBindingType.Uniform)),
+              GPUBindGroupLayoutEntry(
+                binding = 1,
+                visibility = ShaderStage.Fragment,
+                texture = GPUTextureBindingLayout(sampleType = TextureSampleType.Float, viewDimension = TextureViewDimension._2D),
+              ),
+              GPUBindGroupLayoutEntry(binding = 2, visibility = ShaderStage.Fragment, sampler = GPUSamplerBindingLayout(type = SamplerBindingType.Filtering)),
+              GPUBindGroupLayoutEntry(
+                binding = 3,
+                visibility = ShaderStage.Fragment,
+                texture = GPUTextureBindingLayout(sampleType = TextureSampleType.Float, viewDimension = TextureViewDimension._2D),
+              ),
+            )
+        )
+      )
+    val postPipelineLayout: GPUPipelineLayout = device.createPipelineLayout(GPUPipelineLayoutDescriptor(bindGroupLayouts = arrayOf(postLayout)))
+    val linear =
+      device.createSampler(
+        GPUSamplerDescriptor(
+          magFilter = FilterMode.Linear,
+          minFilter = FilterMode.Linear,
+          addressModeU = AddressMode.ClampToEdge,
+          addressModeV = AddressMode.ClampToEdge,
+        )
+      )
+
     override fun close() {
-      for (buffer in listOf(frame, cube, index, traffic)) {
+      for (buffer in listOf(frame, cube, index, traffic, post)) {
         buffer.destroy()
         buffer.close()
       }
+      linear.close()
+      postPipelineLayout.close()
+      postLayout.close()
       sceneGroup.close()
       casterGroup.close()
       shadowSampler.close()
+      atlasSampler.close()
+      atlasView.close()
+      atlas.destroy()
+      atlas.close()
       shadowView.close()
       shadowMap.destroy()
       shadowMap.close()
@@ -1056,35 +1287,72 @@ internal class CityRenderer(
     val caster: GPURenderPipeline,
     val sky: GPURenderPipeline,
     val rain: GPURenderPipeline,
+    val prefilter: GPURenderPipeline,
+    val down: GPURenderPipeline,
+    val up: GPURenderPipeline,
+    val composite: GPURenderPipeline,
   ) : AutoCloseable {
     override fun close() {
-      for (pipeline in listOf(blocks, caster, sky, rain)) pipeline.close()
+      for (pipeline in listOf(blocks, caster, sky, rain, prefilter, down, up, composite)) pipeline.close()
     }
   }
 
-  /** The multisampled colour and depth attachments, sized to the surface. */
-  private class Targets(device: GPUDevice, width: Int, height: Int, format: Int) : AutoCloseable {
-    private val color = attachment(device, width, height, format)
-    private val depth = attachment(device, width, height, DEPTH_FORMAT)
+  /**
+   * Sized to the surface: the multisampled float colour and depth the city is drawn into, the
+   * float texture it resolves to, and the bloom chain, each level half the one before, with the
+   * bind groups the glow passes read them through.
+   */
+  private class Targets(private val device: GPUDevice, width: Int, height: Int, private val resources: Resources) : AutoCloseable {
+    private val color = attachment(device, width, height, HDR_FORMAT, SAMPLES, TextureUsage.RenderAttachment)
+    private val depth = attachment(device, width, height, DEPTH_FORMAT, SAMPLES, TextureUsage.RenderAttachment)
+    private val hdr = attachment(device, width, height, HDR_FORMAT, 1, TextureUsage.RenderAttachment or TextureUsage.TextureBinding)
+    private val bloom =
+      List(BLOOM_LEVELS) { i ->
+        attachment(device, max(1, width shr (i + 1)), max(1, height shr (i + 1)), HDR_FORMAT, 1, TextureUsage.RenderAttachment or TextureUsage.TextureBinding)
+      }
     val colorView: GPUTextureView = color.createView()
     val depthView: GPUTextureView = depth.createView()
+    val hdrView: GPUTextureView = hdr.createView()
+    val bloomViews: List<GPUTextureView> = bloom.map { it.createView() }
+
+    private fun group(source: GPUTextureView, second: GPUTextureView = source) =
+      device.createBindGroup(
+        GPUBindGroupDescriptor(
+          layout = resources.postLayout,
+          entries =
+            arrayOf(
+              GPUBindGroupEntry(binding = 0, buffer = resources.post),
+              GPUBindGroupEntry(binding = 1, textureView = source),
+              GPUBindGroupEntry(binding = 2, sampler = resources.linear),
+              GPUBindGroupEntry(binding = 3, textureView = second),
+            ),
+        )
+      )
+
+    /** Level i of the chain reads the level above it (the resolved city for the first). */
+    val downGroups: List<GPUBindGroup> = List(BLOOM_LEVELS) { i -> group(if (i == 0) hdrView else bloomViews[i - 1]) }
+
+    /** Adding back onto level i reads the level below it. */
+    val upGroups: List<GPUBindGroup> = List(BLOOM_LEVELS - 1) { i -> group(bloomViews[i + 1]) }
+
+    val compositeGroup: GPUBindGroup = group(hdrView, bloomViews[0])
 
     override fun close() {
-      colorView.close()
-      depthView.close()
-      for (texture in listOf(color, depth)) {
+      (downGroups + upGroups + compositeGroup).forEach { it.close() }
+      (listOf(colorView, depthView, hdrView) + bloomViews).forEach { it.close() }
+      for (texture in listOf(color, depth, hdr) + bloom) {
         texture.destroy()
         texture.close()
       }
     }
 
-    private fun attachment(device: GPUDevice, width: Int, height: Int, format: Int): GPUTexture =
+    private fun attachment(device: GPUDevice, width: Int, height: Int, format: Int, samples: Int, usage: Int): GPUTexture =
       device.createTexture(
         GPUTextureDescriptor(
-          usage = TextureUsage.RenderAttachment,
+          usage = usage,
           size = GPUExtent3D(width, height),
           format = format,
-          sampleCount = SAMPLES,
+          sampleCount = samples,
         )
       )
   }
@@ -1092,7 +1360,27 @@ internal class CityRenderer(
   companion object {
     private const val TAG = "SkylineQR"
     /** Boxes for everything that moves: vehicles and their parts, the meteor and its fireball. */
-    private const val MAX_PARTS = 240
+    private const val MAX_PARTS = 768
+
+    /** How long a change of hour, and of weather, takes to ease in. */
+    private const val TIME_EASE = 1.5f
+    private const val WEATHER_EASE = 3f
+
+    /** How quickly the weather's own sky comes in and goes, in seconds to two thirds of the way. */
+    private const val SKY_IN = 0.9f
+    private const val SKY_OUT = 0.6f
+
+    /** How long haze's front takes to roll across the plate as it comes. */
+    private const val HAZE_IN = 4.5f
+
+    /** How near its place the deck must be for lightning to come out of it: most of the way in. */
+    private const val DECKED = 0.3f
+
+    /** How close under a storm cloud a roof must be for lightning to prefer it, in cloud sizes. */
+    private const val UNDER_CLOUD = 1.1f
+
+    /** The most wind streaks haze blows through the city at once. */
+    private const val MAX_GUSTS = 64
     /** How long a bolt's damage lasts, the crumble and the rebuild, and how long its fragments fly. */
     private const val DAMAGE_AFTER = 4.4f
     /** The grey of the smoke after a bolt, in a detail part's random slot. */
@@ -1106,11 +1394,16 @@ internal class CityRenderer(
     private const val MAX_DROPS = 2600
     private const val ROTOR_SPIN = 26f
     private const val SAMPLES = 4
+    /** The city is drawn in floats, so lights can be brighter than white and bloom. */
+    private const val HDR_FORMAT = TextureFormat.RGBA16Float
+    /** Levels in the bloom chain, from half the screen down to about a thirtieth of it. */
+    private const val BLOOM_LEVELS = 6
+    /** What counts as brighter than white, how softly it starts, and how strong the glow is. */
+    private const val BLOOM_THRESHOLD = 1.05f
+    private const val BLOOM_KNEE = 0.2f
+    private const val BLOOM = 0.45f
     private const val DEPTH_FORMAT = TextureFormat.Depth24Plus
     private const val SHADOW_FORMAT = TextureFormat.Depth32Float
-
-    /** Paving: one warm stone for every city, lit by the hour. */
-    private val PLAZA = floatArrayOf(0xEE / 255f, 0xE8 / 255f, 0xDC / 255f)
 
     /** Shaders write display-ready colour themselves, so the surface must not be an sRGB format. */
     private val PREFERRED_FORMATS = intArrayOf(TextureFormat.RGBA8Unorm, TextureFormat.BGRA8Unorm)
@@ -1141,12 +1434,12 @@ internal class CityRenderer(
     private fun strikeTime(spell: Int) = spell * SPELL + 0.2f + unit(spell * 2 + 2) * (SPELL - 1.0f)
 
     /** The roofs of the tallest towers, x, z and height each: where lightning comes down. */
-    private fun lightningRods(city: City): FloatArray {
+    internal fun lightningRods(city: City): FloatArray {
       val d = city.instances
       val found = ArrayList<FloatArray>()
       for (i in 0 until city.count) {
         val o = i * CityPlanner.STRIDE
-        if (d[o + 6] == CityPlanner.ROLE_TOWER && d[o + 7] >= 0.5f && d[o + 8] < 0.5f) {
+        if (d[o + 6] == CityPlanner.ROLE_TOWER && d[o + 7] >= 0.5f && !CityPlanner.isPattern(d[o + 8])) {
           found += floatArrayOf(d[o], d[o + 2], d[o + 1] + d[o + 4] / 2f)
         }
       }
@@ -1168,6 +1461,8 @@ internal class CityRenderer(
       device.pushErrorScope(ErrorFilter.Validation)
       val module =
         device.createShaderModule(GPUShaderModuleDescriptor(label = "skyline", shaderSourceWGSL = GPUShaderSourceWGSL(Wgsl.SOURCE)))
+      val postModule =
+        device.createShaderModule(GPUShaderModuleDescriptor(label = "glow", shaderSourceWGSL = GPUShaderSourceWGSL(Wgsl.POST)))
       try {
         val multisample = GPUMultisampleState(count = SAMPLES)
         fun depth(write: Boolean, compare: Int) =
@@ -1184,7 +1479,7 @@ internal class CityRenderer(
               layout = resources.layout,
               depthStencil = depth,
               multisample = multisample,
-              fragment = GPUFragmentState(module, fragment, targets = arrayOf(GPUColorTargetState(format = format, blend = blend))),
+              fragment = GPUFragmentState(module, fragment, targets = arrayOf(GPUColorTargetState(format = HDR_FORMAT, blend = blend))),
             )
           )
         val alpha = GPUBlendState(
@@ -1212,11 +1507,29 @@ internal class CityRenderer(
           )
         val sky = pipeline("sky", GPUVertexState(module, "skyVertex"), "skyFragment", depth(write = false, compare = CompareFunction.Always))
         val rain = pipeline("rain", GPUVertexState(module, "rainVertex"), "rainFragment", depth(write = false, compare = CompareFunction.LessEqual), alpha)
+        val additive = GPUBlendState(
+          color = GPUBlendComponent(BlendOperation.Add, BlendFactor.One, BlendFactor.One),
+          alpha = GPUBlendComponent(BlendOperation.Add, BlendFactor.One, BlendFactor.One),
+        )
+        fun screen(label: String, fragment: String, target: Int, blend: GPUBlendState? = null) =
+          device.createRenderPipeline(
+            GPURenderPipelineDescriptor(
+              vertex = GPUVertexState(postModule, "screenVertex"),
+              label = label,
+              layout = resources.postPipelineLayout,
+              fragment = GPUFragmentState(postModule, fragment, targets = arrayOf(GPUColorTargetState(format = target, blend = blend))),
+            )
+          )
+        val prefilter = screen("bloom prefilter", "bloomPrefilter", HDR_FORMAT)
+        val down = screen("bloom down", "bloomDown", HDR_FORMAT)
+        val up = screen("bloom up", "bloomUp", HDR_FORMAT, additive)
+        val composite = screen("composite", "composite", format)
         // Throws with the WGSL compiler's message if anything above was invalid.
         device.popErrorScope()
-        return Pipelines(blocks, caster, sky, rain)
+        return Pipelines(blocks, caster, sky, rain, prefilter, down, up, composite)
       } finally {
         module.close()
+        postModule.close()
       }
     }
 
@@ -1270,43 +1583,5 @@ internal class CityRenderer(
     private fun frac(v: Float) = v - floor(v)
 
     private fun smooth(t: Float) = t.coerceIn(0f, 1f).let { it * it * (3f - 2f * it) }
-
-    private val CUBE_MESH =
-      floatArrayOf(
-        0.5f, -0.5f, 0.5f, 1f, 0f, 0f,
-        0.5f, -0.5f, -0.5f, 1f, 0f, 0f,
-        0.5f, 0.5f, -0.5f, 1f, 0f, 0f,
-        0.5f, 0.5f, 0.5f, 1f, 0f, 0f,
-        -0.5f, -0.5f, -0.5f, -1f, 0f, 0f,
-        -0.5f, -0.5f, 0.5f, -1f, 0f, 0f,
-        -0.5f, 0.5f, 0.5f, -1f, 0f, 0f,
-        -0.5f, 0.5f, -0.5f, -1f, 0f, 0f,
-        -0.5f, 0.5f, 0.5f, 0f, 1f, 0f,
-        0.5f, 0.5f, 0.5f, 0f, 1f, 0f,
-        0.5f, 0.5f, -0.5f, 0f, 1f, 0f,
-        -0.5f, 0.5f, -0.5f, 0f, 1f, 0f,
-        -0.5f, -0.5f, -0.5f, 0f, -1f, 0f,
-        0.5f, -0.5f, -0.5f, 0f, -1f, 0f,
-        0.5f, -0.5f, 0.5f, 0f, -1f, 0f,
-        -0.5f, -0.5f, 0.5f, 0f, -1f, 0f,
-        -0.5f, -0.5f, 0.5f, 0f, 0f, 1f,
-        0.5f, -0.5f, 0.5f, 0f, 0f, 1f,
-        0.5f, 0.5f, 0.5f, 0f, 0f, 1f,
-        -0.5f, 0.5f, 0.5f, 0f, 0f, 1f,
-        0.5f, -0.5f, -0.5f, 0f, 0f, -1f,
-        -0.5f, -0.5f, -0.5f, 0f, 0f, -1f,
-        -0.5f, 0.5f, -0.5f, 0f, 0f, -1f,
-        0.5f, 0.5f, -0.5f, 0f, 0f, -1f,
-      )
-
-    private val CUBE_INDICES =
-      shortArrayOf(
-        0, 1, 2, 0, 2, 3,
-        4, 5, 6, 4, 6, 7,
-        8, 9, 10, 8, 10, 11,
-        12, 13, 14, 12, 14, 15,
-        16, 17, 18, 16, 18, 19,
-        20, 21, 22, 20, 22, 23,
-      )
   }
 }

@@ -30,4 +30,4 @@ plugins {
 }
 
 rootProject.name = "Skyline QR"
-include(":skylineqr-core", ":skylineqr-compose", ":app")
+include(":skylineqr-core", ":skylineqr-compose", ":skylineqr-nfc", ":app")
