@@ -23,13 +23,7 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- Share links. Verified against https://skylightlim.github.io/.well-known/assetlinks.json -->
-            <intent-filter android:autoVerify="true">
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="skylightlim.github.io" android:pathPrefix="/city" />
-            </intent-filter>
+            <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
             <!-- The Share menu: text and links become a new card to check and save. -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />

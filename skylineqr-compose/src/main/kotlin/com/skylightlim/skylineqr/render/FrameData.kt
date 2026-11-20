@@ -12,6 +12,26 @@ import kotlin.math.min
  */
 internal object FrameData {
 
+  /** vec4s of the Frame uniform that hold the flat code: a version 6 code's 41 x 41 modules, four a float. */
+  const val CODE_VEC4 = 106
+
+  private var codeOf: City? = null
+  private var code = FloatArray(4 * CODE_VEC4)
+
+  /** [city]'s flat code packed for the uniform, worked out once a city. */
+  private fun code(city: City?): FloatArray {
+    if (city === codeOf) return code
+    val packed = IntArray(4 * CODE_VEC4)
+    if (city != null) {
+      for (i in 0 until city.modules * city.modules) {
+        if (city.qr.isDark(i % city.modules, i / city.modules)) packed[i / 4] = packed[i / 4] or ((city.inks[i] + 1) shl (i % 4 * 5))
+      }
+    }
+    code = FloatArray(packed.size) { packed[it].toFloat() }
+    codeOf = city
+    return code
+  }
+
   /** Paving: one warm stone for every city, lit by the hour. */
   private val PLAZA = floatArrayOf(0xEE / 255f, 0xE8 / 255f, 0xDC / 255f)
 
@@ -39,6 +59,8 @@ internal object FrameData {
     damage: FloatArray,
     bolt: FloatArray,
     screen: FloatArray,
+    /** The night sky's: see [stars]. */
+    stars: FloatArray = floatArrayOf(0f, 0f, 1f, 0f),
   ) {
     System.arraycopy(pose.viewProjection, 0, out, 0, 16)
     System.arraycopy(light, 0, out, 16, 16)
@@ -68,21 +90,33 @@ internal object FrameData {
     put(PLAZA, air.wet)
     put(air.window, flash)
     put(air.paper, if (raising) 1f else 0f)
-    put(air.ink, hazeFront)
+    put4((city?.modules ?: 0).toFloat(), 0f, 0f, hazeFront)
     put(materials.vehicle, wind)
-    for (i in 0 until 4) put4(materials.families[i * 3], materials.families[i * 3 + 1], materials.families[i * 3 + 2], 0f)
     for (i in 0 until 32) put4(materials.landmarks[i * 3], materials.landmarks[i * 3 + 1], materials.landmarks[i * 3 + 2], 0f)
-    // Each tone's tower colour and each ink, from FlatColours itself, so the screen shows exactly
-    // the code its tests scan.
-    for (t in 0 until FlatColours.MAX_TONES) put(FlatColours.block(materials, t))
-    for (i in 0 until FlatColours.INKS) put(FlatColours.ink(i, air))
+    // Each ink from FlatColours itself, so the screen shows exactly the code its tests scan.
+    for (i in 0 until FlatColours.INKS) put(FlatColours.ink(i))
     put4(city?.plateHalf ?: 20f, city?.maxHeight ?: 4f, if (calm) 0.45f else 1f, pose.shiftY)
     put(meteor, meteor[3])
     put(damage, damage[3])
     put(bolt, bolt[3])
+    put(stars, stars[3])
     System.arraycopy(screen, 0, out, o, Billboard.FLOATS)
     o += Billboard.FLOATS
+    // The flat code for the landmarks to turn into: four modules a float, five bits each, which a
+    // float holds exactly.
+    System.arraycopy(code(city), 0, out, o, 4 * CODE_VEC4)
+    o += 4 * CODE_VEC4
     check(o == out.size) { "frame uniform packed $o of ${out.size} floats" }
+  }
+
+  /**
+   * The night sky's field of the Frame uniform (2026-11-09): [city]'s own star seed, how many of
+   * the stars show through [air] (none in rain or a storm, few in haze; the shader adds the dark),
+   * and the screen's [height] in pixels, so stars and shooting stars stay a pixel or two wide.
+   */
+  fun stars(city: City?, air: Atmosphere, height: Int): FloatArray {
+    val seed = ((city?.identity?.seed ?: 0) and 0xffff) / 65536f
+    return floatArrayOf(seed, (1f - air.rain) * (1f - 0.85f * air.haze), height.toFloat(), 0f)
   }
 
   /** The unit cube: position and normal per vertex, four vertices a face so normals stay flat. */

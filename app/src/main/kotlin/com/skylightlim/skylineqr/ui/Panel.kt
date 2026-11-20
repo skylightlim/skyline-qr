@@ -99,14 +99,12 @@ import kotlin.math.abs
  * The panel's controls, Material 3 Expressive (2026-11-06; before, frosted tiles after the ICQR
  * tree's): they float over the city with no sheet behind them, on the theme's surface containers,
  * which the sky tints. Nothing at the top since 2026-11-07. The hint, the card picker with the
- * share button beside it, then the choices with
- * the new-card button under share (2026-11-07; it had opened the cards screen, now gone). The
- * share button is the one filled in the primary colour; the hour is a connected button group; the
- * weather opens a menu. Buttons change shape as they are pressed and chosen, on the expressive
- * motion scheme's springs.
+ * new-card button beside it, then the hour, the weather menu and the app's own button, which opens
+ * the settings card (2026-11-09: it replaced share, and + moved up beside the picker). Buttons
+ * change shape as they are pressed and chosen, on the expressive motion scheme's springs.
  */
 
-/** The card picker's height; the share button beside it matches. */
+/** The card picker's height; the new-card button beside it matches. */
 internal val FieldHeight = 56.dp
 
 /** The row of choices: a touch target tall. */
@@ -122,8 +120,7 @@ internal val PanelWidth = 560.dp
  * card shows by its colour and shape; every card but the profile has a trash button that removes
  * it (the snackbar offers Undo). M3's menu items stop at 280 dp, so the rows are drawn here.
  * Links and payment codes can be cities (a payment code's shows who it pays, never the code
- * itself); Wi-Fi, text and contact cards can't. A city opened from a share link shows its link
- * here until a card is picked.
+ * itself); Wi-Fi, text and contact cards can't.
  */
 @Composable
 internal fun CardPicker(
@@ -163,12 +160,12 @@ internal fun CardPicker(
           contentAlignment = Alignment.CenterStart,
           label = "picked card",
         ) { (shownTitle, shownUrl) ->
-          Column {
-            Text(shownTitle ?: shownUrl, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (shownTitle != null) {
-              Text(shownUrl, style = MaterialTheme.typography.bodySmall, color = colours.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-          }
+          // The card's name alone (2026-11-12, at the user's request); the whole link shows in the
+          // list. A card with no name shows its site.
+          Text(
+            shownTitle ?: shownUrl.substringAfter("://").substringBefore('/'),
+            style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis,
+          )
         }
         Icon(SkylineIcons.More, contentDescription = null, tint = colours.onSurfaceVariant, modifier = Modifier.padding(start = 8.dp).size(18.dp).flipWhen(open))
       }
@@ -323,23 +320,9 @@ private fun Label(text: String) {
 /** How far the hint's words blur as one morphs into the next. */
 private val HINT_BLUR = 10.dp
 
-/** The share button: the panel's main action, filled in the primary colour, square until pressed. */
-@Composable
-internal fun ShareButton(description: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
-  val press = remember { MutableInteractionSource() }
-  FilledIconButton(
-    onClick = onClick,
-    shapes = IconButtonDefaults.shapes(shape = IconButtonDefaults.mediumSquareShape, pressedShape = IconButtonDefaults.mediumPressedShape),
-    modifier = modifier.springPress().size(FieldHeight),
-    interactionSource = press,
-  ) {
-    Icon(SkylineIcons.Share, contentDescription = description, modifier = Modifier.size(IconButtonDefaults.mediumIconSize).iconMotion(press, IconMotion.Lift))
-  }
-}
-
 /**
- * A new card, in the row of choices right under the share button and as wide: a tonal button
- * cornered like the group beside it. It opens the card popup over the city.
+ * A new card, beside the card picker and as tall (2026-11-09: it was in the row of choices, under
+ * share): a tonal button cornered like the picker. It opens the card popup over the city.
  */
 @Composable
 internal fun AddButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
@@ -349,7 +332,7 @@ internal fun AddButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
     onClick = onClick,
     shapes = IconButtonDefaults.shapes(shape = RoundedCornerShape(Outer), pressedShape = IconButtonDefaults.mediumPressedShape),
     colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = colours.surfaceContainer, contentColor = colours.onSurface),
-    modifier = modifier.springPress().size(width = FieldHeight, height = ChoiceHeight),
+    modifier = modifier.springPress().size(FieldHeight),
     interactionSource = press,
   ) {
     Icon(SkylineIcons.Add, contentDescription = "New card", modifier = Modifier.size(22.dp).iconMotion(press, IconMotion.Turn))

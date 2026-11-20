@@ -20,13 +20,17 @@ class TrafficTest {
     return CityPlanner.plan(QrEncoder.encode(identity.link.payload), identity, preset)
   }
 
-  /** Whether a world point stands over road: a light module, or the ring outside the code. */
+  /**
+   * Whether a world point stands over road: a light module, the ring outside the code, or in Kuala
+   * Lumpur the crossing's paving over the alignment pattern.
+   */
   private fun onRoad(city: City, x: Float, z: Float): Boolean {
     val n = city.modules
     val col = floor(x + n / 2f).toInt()
     val row = floor(z + n / 2f).toInt()
     if (col < 0 || row < 0 || col >= n || row >= n) return col >= -1 && row >= -1 && col <= n && row <= n
-    return !city.qr.isDark(col, row)
+    val crossing = if (city.preset == CityPreset.KUALA_LUMPUR) Corners.alignment(city.qr) else -1
+    return !city.qr.isDark(col, row) || crossing >= 0 && row * n + col in Corners.paved(crossing, n)
   }
 
   private fun angle(a: Float, b: Float): Float {
@@ -42,7 +46,7 @@ class TrafficTest {
       val city = city(url, preset)
       val drivers = city.movers.filter { it.kind == Mover.CAR || it.kind == Mover.BUS }
       assertTrue("$url has only ${drivers.size} vehicles on the road", drivers.size >= 4)
-      assertEquals(1, drivers.count { it.kind == Mover.BUS })
+      assertEquals(4, drivers.count { it.kind == Mover.BUS })
       val p = FloatArray(4)
       val q = FloatArray(4)
       for (m in drivers) {
@@ -111,6 +115,23 @@ class TrafficTest {
         assertTrue(p.all { it.isFinite() })
       }
     }
+  }
+
+  @Test
+  fun theBusStopsAtTheLightsOnTheNearEdges() {
+    var stops = 0
+    for (url in sites) {
+      val city = city(url)
+      val bus = city.movers.first { it.kind == Mover.BUS }
+      stops += bus.stops.size / 3
+      // Every one of its lines belongs to a junction out on the ring road, on the bottom or right edge.
+      for (k in 0 until bus.stops.size / 3) {
+        val j = bus.stops[k * 3 + 1].toInt()
+        val n = city.modules
+        assertTrue(city.signals.cells[j * 2] == n || city.signals.cells[j * 2 + 1] == n)
+      }
+    }
+    assertTrue("the bus never met a light", stops > 0)
   }
 
   @Test

@@ -12,20 +12,21 @@ import org.junit.Test
  * Golden fingerprints: a hash of everything the planner hands the renderer, for a few fixed links.
  * If one changes, the same link no longer builds the same city.
  *
- * Generator version 1 is a draft until the first public release, so until then a deliberate change
- * to the planner may update these. After the release they are frozen: a visual change adds a new
- * generator version and leaves version 1, and these hashes, alone.
+ * Generator version 1 shipped in the first public release, v1.0.0 (2026-11-20), so these are
+ * frozen: a visual change adds a new generator version and leaves version 1, and these hashes,
+ * alone.
  */
 class GeneratorFingerprintTest {
 
-  // 2026-11-07: the flat code's inks became each district's own lively hue.
+  // 2026-11-20: the Pantone inks without magenta, seven hues round the wheel; Kuala Lumpur's
+  // districts balanced, and its lawn finder modules under the lawn.
   private val golden =
     linkedMapOf(
-      "kl:https://github.com/skylightlim/skyline-qr" to "4566c4804cf0a10c",
-      "kl:https://um.edu.my/" to "128208c69eb6fb7e",
-      "https://github.com/skylightlim/skyline-qr" to "f47d9cb06c8e00da",
-      "https://example.com/" to "38bd5d47692c3323",
-      "https://um.edu.my/" to "8d5f34b5dd83639b",
+      "kl:https://github.com/skylightlim/skyline-qr" to "06133630828fa1c9",
+      "kl:https://um.edu.my/" to "e3cc4dcb86f40313",
+      "https://github.com/skylightlim/skyline-qr" to "1c216bcc3f16e9d4",
+      "https://example.com/" to "29a667bc04715d9b",
+      "https://um.edu.my/" to "7538e091fa75d8cc",
     )
 
   @Test
@@ -47,7 +48,7 @@ class GeneratorFingerprintTest {
     fun put(v: Float) = digest.update(bytes.clear().putFloat(v).array())
     city.instances.forEach(::put)
     city.materials.families.forEach(::put)
-    city.materials.districts.forEach(::put)
+    put(city.materials.districts.toFloat())
     city.tones.forEach { put(it.toFloat()) }
     city.inks.forEach { put(it.toFloat()) }
     for (m in city.movers) {

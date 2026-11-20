@@ -120,6 +120,11 @@ rain = device.create_render_pipeline(
     depth_stencil=depth(False, "less-equal"), multisample={"count": SAMPLES},
     fragment={"module": skyline, "entry_point": "rainFragment", "targets": [{"format": HDR, "blend": alpha}]})
 GUST_BASE, GUST_VERTICES = 65536, 60  # Wgsl.GUST_BASE, Wgsl.GUST_VERTICES
+clouds = device.create_render_pipeline(
+    layout=scene_pl, vertex={"module": skyline, "entry_point": "cloudVertex", "buffers": block_buffers},
+    primitive={"topology": "triangle-list"},
+    depth_stencil=depth(False, "less-equal"), multisample={"count": SAMPLES},
+    fragment={"module": skyline, "entry_point": "cloudFragment", "targets": [{"format": HDR, "blend": alpha}]})
 caster = device.create_render_pipeline(
     layout=caster_pl, vertex={"module": skyline, "entry_point": "casterVertex", "buffers": block_buffers},
     primitive={"topology": "triangle-list"},
@@ -219,6 +224,9 @@ for line in (frames / "scenes.txt").read_text().splitlines():
     p.draw(3)
     p.set_pipeline(blocks)
     draw_blocks(p, scene_moving, scene_traffic)
+    if scene_moving and fold < 0.999:
+        p.set_pipeline(clouds)
+        p.draw_indexed(36, scene_moving)
     if drops:
         p.set_pipeline(rain)
         p.draw(6, drops)

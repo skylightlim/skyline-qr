@@ -127,7 +127,9 @@ class ViewTest {
       assertTrue("$url: a monorail of only ${train.route.length}", train.route.length >= 8f)
       // On a phone held upright, the city filling the screen.
       val seen = railInView(city, 0.45f)
-      assertTrue("$url: only $seen of the monorail in view", seen >= 0.9f)
+      println("rail $url length ${train.route.length} stations ${train.stations.size} seen $seen")
+      // Most of it: since 2026-11-12 the line runs on behind towers to reach more of the city.
+      assertTrue("$url: only $seen of the monorail in view", seen >= 0.6f)
     }
   }
 }

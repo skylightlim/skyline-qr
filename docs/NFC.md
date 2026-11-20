@@ -125,8 +125,8 @@ wanted.
   (the profile first), and the payment cards. Text, Wi-Fi and contact cards can't be cities, so it leaves them out. Each
   card but the profile has a trash button there; Undo in the snackbar brings it back
   (`CardStore.restore`).
-- The city's new-card button (+), in its row of choices right under the share button and as
-  wide, opens the card popup (after Tap Tap Tap's, without its colours): a card over the city in
+- The city's new-card button (+), beside the card picker and as tall (2026-11-09; it was in the
+  row of choices, under share), opens the card popup (after Tap Tap Tap's, without its colours): a card over the city in
   the panel's colours, not a page of its own. "New card" with two tonal buttons beside it, NFC and
   QR, to fill it in from a tag or another phone or from a QR code; what the card holds as a
   bar with a pill in Tap Tap Tap's order (Link, Text, Wi-Fi, Contact), like the time of day's; its fields (the

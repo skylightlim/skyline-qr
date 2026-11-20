@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Long-press the app on the home screen: the tour flies past every landmark, then folds into the code. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="tour"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_tour"
+        android:shortcutShortLabel="@string/tour_short"
+        android:shortcutLongLabel="@string/tour_long">
+        <intent
+            android:action="com.skylightlim.skylineqr.TOUR"
+            android:targetPackage="com.skylightlim.skylineqr"
+            android:targetClass="com.skylightlim.skylineqr.MainActivity" />
+    </shortcut>
+</shortcuts>

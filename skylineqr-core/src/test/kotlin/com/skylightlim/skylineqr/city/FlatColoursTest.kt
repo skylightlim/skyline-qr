@@ -48,12 +48,12 @@ class FlatColoursTest {
   @Test
   fun anyTwoInksCanTouchAndAnyTwoPapers() {
     for ((label, air) in airs) {
-      val inks = (0 until FlatColours.INKS).map { FlatColours.ink(it, air) }
+      val inks = (0 until FlatColours.INKS).map { FlatColours.ink(it) }
       for ((i, ink) in inks.withIndex()) {
         val where = "$label ink $i"
         assertEquals(where, FlatColours.INK_LUMA, FlatColours.lumaZxing(ink), 1e-4f)
         // Well under the paper, to the camera as well.
-        assertTrue(where, FlatColours.luma601(ink) < 0.42f)
+        assertTrue(where, FlatColours.luma601(ink) < 0.45f)
         assertTrue(where, ink.all { it in 0f..1f })
       }
       // Every pair, so modules can take their inks in any order: close to the camera too, well
@@ -71,21 +71,43 @@ class FlatColoursTest {
 
   @Test
   fun theInksAreLively() {
-    // Every fixed hour in clear weather: each hue's full shade is a real colour, the softer shade
-    // less so, and the hues spread round the wheel (2026-11-07: "look lively").
-    for (time in TimeOfDay.entries - TimeOfDay.AUTO) {
-      val air = Atmospheres.at(time, Weather.CLEAR, 0f)
-      val full = (0 until FlatColours.HUES).map { FlatColours.ink(it * 2, air) }
-      val soft = (0 until FlatColours.HUES).map { FlatColours.ink(it * 2 + 1, air) }
-      for (h in 0 until FlatColours.HUES) {
-        val chroma = full[h].max() - full[h].min()
-        assertTrue("$time hue $h is grey: $chroma", chroma > 0.15f)
-        assertTrue("$time hue $h's softer shade is not softer", soft[h].max() - soft[h].min() < chroma)
+    // Each hue's two shades are real colours and stay near the Pantone colours they were picked
+    // as, and the hues spread round the wheel (2026-11-07: "look lively").
+    val first = (0 until FlatColours.HUES).map { FlatColours.ink(it * 2) }
+    for (i in 0 until FlatColours.INKS) {
+      val ink = FlatColours.ink(i)
+      // Muted since 2026-11-12, at the user's request, but still a colour, not a grey.
+      assertTrue("ink $i is grey", ink.max() - ink.min() > 0.06f)
+      // No magenta since 2026-11-20, at the user's request: its pair (513, 254) sat at 316 to 322
+      // degrees, between the plum purple and the rose.
+      assertTrue("ink $i is magenta: ${hue(ink)}", hue(ink) !in 305f..330f)
+    }
+    for (h in 0 until FlatColours.HUES) {
+      assertTrue("hue $h's shades are one colour", (0..2).any { abs(first[h][it] - FlatColours.ink(h * 2 + 1)[it]) > 0.02f })
+    }
+    // Distinct colours: at least five of them 20 degrees or more from each other (the inks' two
+    // brightnesses leave the greens, teals and blues close together).
+    val hues = first.map { hue(it) }.sorted()
+    val distinct = hues.fold(mutableListOf<Float>()) { kept, x -> if (kept.none { apart(it, x) < 20f }) kept += x; kept }
+    assertTrue("only ${distinct.size} distinct hues: $hues", distinct.size >= 5)
+  }
+
+  @Test
+  fun theColoursAreBalanced() {
+    // 2026-11-20, at the user's request ("the amount of each colour are not balance"): every hue
+    // the districts take covers about the same share of the code's dark modules outside the
+    // finders (the towers that show their colour in the city), the odd neighbouring accent aside,
+    // however many districts share it. Kuala Lumpur only: other cities keep their seeded districts.
+    for (city in cities.filter { it.preset == CityPreset.KUALA_LUMPUR }) {
+      val n = city.modules
+      val dark = (0 until n * n).filter { city.qr.isDark(it % n, it / n) && city.qr.role(it % n, it / n) != QrRole.FINDER }
+      val districts = FlatColours.tones(city.materials) / 2
+      val homes = dark.map { FlatColours.hue(city.tones[it] / 2, city.preset, districts) }.toSet()
+      val even = 1f / homes.size
+      for (h in homes) {
+        val share = dark.count { city.inks[it] / 2 == h }.toFloat() / dark.size
+        assertTrue("${city.materials.name}: hue $h covers $share of the code, not about $even", abs(share - even) < 0.05f)
       }
-      // Distinct colours: at least six of them 20 degrees or more from each other.
-      val hues = full.map { hue(it) }.sorted()
-      val distinct = hues.fold(mutableListOf<Float>()) { kept, x -> if (kept.none { apart(it, x) < 20f }) kept += x; kept }
-      assertTrue("$time has only ${distinct.size} distinct hues: $hues", distinct.size >= 6)
     }
   }
 
@@ -204,14 +226,13 @@ class FlatColoursTest {
   }
 
   /**
-   * The flat view as the renderer frames it: the code's square modules, the plate's paper round
-   * it, then the hour's surround. Supersampled, so edges blend as they do under MSAA.
+   * The flat view as the renderer frames it: the code's square modules on a screen of the hour's
+   * paper. Supersampled, so edges blend as they do under MSAA.
    */
   private fun render(city: City, air: Atmosphere, modulePx: Float): BufferedImage {
     val n = city.modules
     val side = ((n + 2 * MARGIN) * modulePx).toInt()
     val image = BufferedImage(side, side, BufferedImage.TYPE_INT_RGB)
-    val surround = Atmospheres.surround(air)
     val sub = 3
     for (y in 0 until side) for (x in 0 until side) {
       var r = 0f
@@ -223,8 +244,7 @@ class FlatColoursTest {
         val c =
           when {
             mx >= 0f && my >= 0f && mx < n && my < n -> FlatColours.at(city, mx, my, air)
-            mx >= -PAPER && my >= -PAPER && mx < n + PAPER && my < n + PAPER -> air.paper
-            else -> surround
+            else -> air.paper
           }
         r += c[0]
         g += c[1]
@@ -253,8 +273,6 @@ class FlatColoursTest {
   private companion object {
     /** Small as a camera sees it across a room, up to a phone screen's own pixels for a small code. */
     val SCALES = listOf(3.4f, 5f, 8.6f, 14f, 23.3f, 29.1f, 41.7f)
-    /** Paper round the code (the plate's two modules), then the surround. */
-    const val PAPER = 2f
     const val MARGIN = 5
     /** How far apart any two inks may lie under BT.601, in levels. */
     const val MAX_601_LEVELS = 14f

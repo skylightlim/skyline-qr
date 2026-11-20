@@ -8,18 +8,18 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.skylightlim.skylineqr.core.SharedCity
 import com.skylightlim.skylineqr.nfc.share.ShareSession
 import com.skylightlim.skylineqr.ui.cards.CardEditor
 import com.skylightlim.skylineqr.ui.cards.CardsViewModel
 
 /**
  * The app: the city, showing whichever saved link card its picker chooses; the card popup over it
- * (from its new-card button or the Share menu); and the snackbar that says what was done. A card being shared by tap shows in the city's hint, which
- * stops it. (2026-11-07: the cards screen is gone; the popup is the only way in.)
+ * (from its new-card button or the Share menu); and the snackbar that says what was done. A card
+ * being shared by tap shows in the city's hint, which stops it. (2026-11-07: the cards screen is
+ * gone; the popup is the only way in.) Each new [tours] is the home screen's Tour shortcut.
  */
 @Composable
-fun SkylineApp(shared: SharedCity?, cards: CardsViewModel) {
+fun SkylineApp(tours: Int, cards: CardsViewModel) {
   val share by cards.share.collectAsStateWithLifecycle()
   val saved by cards.cards.collectAsStateWithLifecycle()
   val popup by cards.popup.collectAsStateWithLifecycle()
@@ -34,7 +34,7 @@ fun SkylineApp(shared: SharedCity?, cards: CardsViewModel) {
   }
 
   SkylineScreen(
-    shared = shared,
+    tours = tours,
     cards = saved,
     // The city's own link is always out; only a share for a while gets a Stop.
     sharing = (share as? ShareSession.State.Sharing)?.takeUnless { it.always }?.card?.title,

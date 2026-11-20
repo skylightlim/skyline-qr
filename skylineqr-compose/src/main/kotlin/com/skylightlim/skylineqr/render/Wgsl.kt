@@ -10,7 +10,7 @@ import com.skylightlim.skylineqr.city.FlatColours
 internal object Wgsl {
 
   /** Floats in the Frame uniform. Keep in step with the struct below and CityRenderer.writeFrame. */
-  const val FRAME_FLOATS = 2 * 16 + 4 * (53 + FlatColours.MAX_TONES + FlatColours.INKS) + Billboard.FLOATS
+  const val FRAME_FLOATS = 2 * 16 + 4 * (50 + FlatColours.INKS) + Billboard.FLOATS + 4 * FrameData.CODE_VEC4
 
   /** Side of the square sun shadow map, in texels. */
   const val SHADOW_MAP_SIZE = 2048
@@ -39,20 +39,20 @@ struct Frame {
   plaza: vec4f,            // w: wet streets, 0..1
   window: vec4f,           // w: lightning flash, 0..1
   paper: vec4f,            // the flat code's light modules; w: 1 while raising the city from the code
-  ink: vec4f,              // the flat code's colour at this hour; w: how far haze's front has rolled across, 0..1
+  front: vec4f,            // x: the code's modules a side; w: how far haze's front has rolled across, 0..1
   vehicle: vec4f,          // w: how strongly haze's wind streaks show, 0..1
-  roofs: array<vec4f, 4>,
   landmarks: array<vec4f, 32>, // steel, glass, concrete, hill, copper, red, smoked glass, blue glass,
                                // leaf, lawn, water, bronze, brick, flag blue, flag yellow, granite,
                                // champagne, lattice, flag red, flag white, crystal, the mall's warm
                                // and cool neon; the rest unused
-  blocks: array<vec4f, 16>,    // a tower's colour by its tone: its district's, or paler
-  inks: array<vec4f, ${FlatColours.INKS}>,      // the flat code's inks, from FlatColours
+  inks: array<vec4f, ${FlatColours.INKS}>,      // the flat code's inks, from FlatColours: a tower is built of its module's
   scene: vec4f,            // x: plate half size, y: tallest tower, z: rain speed
   impact: vec4f,           // a meteor strike: x, z, seconds since impact (negative: none), flash
   damage: vec4f,           // a bolt that destroys: x, z, seconds since it hit (negative: none)
   bolt: vec4f,             // where this flash's bolt comes down: x, z, roof height; w 1 while it shows
+  stars: vec4f,            // the night sky: x the city's star seed 0..1, y how many show 0..1, z the screen's height in pixels
   screen: array<vec4f, 3>, // the billboard: row, offset, width of the message showing and the next; flip, view, shown
+  code: array<vec4f, ${FrameData.CODE_VEC4}>, // the flat code, row by row, four modules a float in five bits each: 0 light, else its ink + 1
 }
 
 @group(0) @binding(0) var<uniform> frame: Frame;
@@ -141,49 +141,44 @@ fn place(v: BlockIn, index: u32) -> Placed {
   let role = v.info.x;
   let fold = frame.eye.w;
   let tower = select(0.0, 1.0, role > 1.5 && role < 2.5);
+  // What stands on the ground: the plate, the tiles, the towers, the landmarks and the monorail's
+  // track. The rest (beacons, traffic, the weather, sparks) has no place to go and shrinks away.
+  // (The plane's banner is drawn in the landmarks' colours, far above every roof: it goes too.)
+  let standing = role < 2.5 || (role > 4.5 && role < 6.5 && v.offset.y < frame.scene.y + 2.0);
   var scale = v.scale;
-  // How far this vertex has come down to its plate.
+  // How far this vertex has come down to the ground, and how far what does not stand has gone.
   var flatness: f32;
+  let gone = leaving();
+  var widen: f32;
   if (raising()) {
-    // Back to the city (2026-11-06 revision): the code's colours go and the towers narrow to their
-    // footprints first, while the landmarks' footprints spread out of the code, so what rises is
-    // the city and not the code's slabs. Then everything grows up from the ground (see rise).
-    // Beacons, traffic and the lights come back last, on what has risen.
+    // Back to the city (2026-11-06 revision): the towers narrow to their footprints first, so what
+    // rises is the city and not the code's slabs. Then everything grows up out of the ground (see
+    // rise). Beacons, traffic and the lights come back last, on what has risen.
     let r = 1.0 - fold;
-    let widen = (1.0 - smoothstep(0.0, RAISE_NARROW, r)) * tower;
-    scale.x = mix(scale.x, 1.0, widen);
-    scale.z = mix(scale.z, 1.0, widen);
-    let start = riseStart(v.offset.xz);
-    flatness = 1.0 - rise(r, start, max(v.offset.y + v.position.y * v.scale.y, 0.0));
-    if (role > 4.5 && role < 6.5) {
-      let spread = smoothstep(start, start + RAISE_NARROW, r);
-      scale.x = scale.x * spread;
-      scale.z = scale.z * spread;
-    } else if (role > 2.5) {
-      scale = scale * smoothstep(RAISE_LAST, 1.0, r);
-    }
+    widen = 1.0 - smoothstep(0.0, RAISE_NARROW, r);
+    flatness = 1.0 - rise(r, riseStart(v.offset.xz), max(v.offset.y + v.position.y * v.scale.y, 0.0));
   } else {
-    // Only the shapes move once the colours have washed (2026-11-01 revision, after the ICQR
-    // tree). What has no part in the code shrinks away first: traffic and beacons, then the
-    // landmarks and the monorail. The towers widen until they touch, so the code can be read
-    // while they still stand, and sink together, a little scattered so it is not mechanical. All
-    // ease in and settle softly (smootherstep), and all have landed when the fold ends.
-    var beat = fold;
-    if (tower > 0.5) {
-      let start = 0.18 + 0.06 * fract(v.info.w * 37.0);
-      beat = (fold - start) / (1.0 - start);
-    } else if (role > 4.5 && role < 6.5) {
-      beat = fold / 0.45;
-    } else if (role > 2.5) {
-      beat = fold / 0.3;
-    }
-    beat = clamp(beat, 0.0, 1.0);
+    // Toward the code, every building goes the same way (2026-11-12, at the user's request, after
+    // the ICQR tree, where all of the tree comes down as one): the whole city sinks into the
+    // ground together on one ease, towers, landmarks, corners and track alike, each point keeping
+    // its share of the height above it, so nothing shrinks in the air and nothing lands early or
+    // late. The towers widen until they touch, so the code can be read while they still stand.
+    // The landmarks, corners and track turn into the code as they come down, like the towers:
+    // every point of them takes the colour of the module under it (see codeAt), so nothing grey
+    // lies over the code on the way (2026-11-12, at the user's request). They end just under the
+    // ground, a moment before the towers are down.
+    let beat = clamp(select(fold, fold / SINK_AHEAD, role > 2.5), 0.0, 1.0);
     flatness = beat * beat * beat * (beat * (beat * 6.0 - 15.0) + 10.0);
-    let widen = smoothstep(0.0, 0.35, fold) * tower;
-    scale.x = mix(scale.x, 1.0, widen);
-    scale.z = mix(scale.z, 1.0, widen);
-    // Beacons, traffic, landmarks and the monorail have no part in the flat code.
-    scale = scale * (1.0 - flatness * step(2.5, role));
+    widen = smoothstep(0.0, 0.35, fold);
+  }
+  scale.x = mix(scale.x, 1.0, widen * tower);
+  scale.z = mix(scale.z, 1.0, widen * tower);
+  if (!standing) {
+    scale = scale * (1.0 - gone);
+  }
+  // A vehicle's lamps (a beacon whose glow is a half) are there after dark only.
+  if (role > 2.5 && role < 3.5 && v.info.y > 0.25 && v.info.y < 0.75) {
+    scale = scale * smoothstep(0.2, 0.7, frame.sunDir.w);
   }
   let taper = mix(1.0, v.shape.y, v.position.y + 0.5);
   var local = turn(vec3f(v.position.x * taper, v.position.y, v.position.z * taper) * scale, v.shape.x);
@@ -192,19 +187,53 @@ fn place(v: BlockIn, index: u32) -> Placed {
   // along the flag, so neighbouring pieces meet.
   let share = fract(v.info.w * 32.0);
   if (role > 4.5 && role < 5.5 && share > 0.69) {
-    let span = v.scale.x * 8.0;
-    let reach = max((share - 0.7) / 0.28 + v.position.x * 0.125, 0.0);
+    // A piece is an eighth of its flag, or a pixel of the crescent and star, which says in its
+    // glow what share of a piece it is wide.
+    let part = select(1.0, (v.info.y - 0.5) / 0.3, v.info.y < 0.85);
+    let span = v.scale.x * 8.0 / part;
+    let reach = max((share - 0.7) / 0.28 + v.position.x * 0.125 * part, 0.0);
     let along = (v.offset.x + local.x) / span;
     local.z = local.z + sin(along * 6.5 - frame.forward.w * 5.0) * 0.12 * span * reach;
     local.y = local.y + sin(along * 4.0 - frame.forward.w * 3.0) * 0.03 * span * reach;
   }
   var placed = meteor(local, blockNormal(v.normal, v.scale, v.shape), v.offset, role, index);
   placed = boltDamage(placed, v.offset, v.scale.y, role);
-  // Flat, the city lies on thin plates in separate tiers by role, so nothing can z-fight.
-  placed.p.y = mix(placed.p.y, 0.004 * role + (v.position.y + 0.5) * 0.02, flatness);
-  // What stays washes to the code's colours; what shrinks away keeps its own.
-  placed.fold = select(wash(), 0.0, role > 2.5);
+  if (role < 2.5) {
+    // Flat, the code lies on thin plates in separate tiers by role, so nothing can z-fight.
+    placed.p.y = mix(placed.p.y, 0.004 * role + (v.position.y + 0.5) * 0.02, flatness);
+  } else if (standing) {
+    // The landmarks and the track sink until they are under the ground, where the plate hides them.
+    placed.p.y = mix(placed.p.y, SUNK, flatness);
+  }
+  // What stays washes to the code's colours; what goes keeps its own.
+  placed.fold = select(0.0, wash(), standing);
   return placed;
+}
+
+// How far what does not stand on the ground (beacons, traffic, the weather, sparks) has shrunk
+// away: early toward the code, and back last on the way to the city, on what has risen.
+fn leaving() -> f32 {
+  let fold = frame.eye.w;
+  if (raising()) {
+    return 1.0 - smoothstep(RAISE_LAST, 1.0, 1.0 - fold);
+  }
+  return smoothstep(0.0, 0.3, fold);
+}
+
+// The flat code's colour at a point on the ground: the ink of the dark module there, or the paper.
+fn codeAt(at: vec2f) -> vec3f {
+  let n = i32(frame.front.x);
+  let cell = vec2i(floor(at + f32(n) * 0.5));
+  if (cell.x < 0 || cell.y < 0 || cell.x >= n || cell.y >= n) {
+    return frame.paper.rgb;
+  }
+  let i = u32(cell.y * n + cell.x);
+  let packed = u32(frame.code[i / 16u][(i / 4u) % 4u]);
+  let m = (packed >> ((i % 4u) * 5u)) & 31u;
+  if (m == 0u) {
+    return frame.paper.rgb;
+  }
+  return frame.inks[m - 1u].rgb;
 }
 
 // Whether the morph is on its way from the code back to the city, which has its own choreography
@@ -214,6 +243,10 @@ fn raising() -> bool {
   return frame.paper.w > 0.5;
 }
 
+// The fold: what is not in the code is under the ground by this far, the towers a moment later.
+const SINK_AHEAD = 0.9;
+// How far under the ground it ends, below the plate's flat top.
+const SUNK = -0.05;
 // The raise: the code's colours have gone and the towers have their own footprints by this far.
 const RAISE_NARROW = 0.3;
 // The raise: beacons, traffic and the traffic lights come back from here on.
@@ -383,6 +416,9 @@ fn blockVertex(v: BlockIn, @builtin(instance_index) index: u32) -> BlockOut {
   let placed = place(v, index);
   var out: BlockOut;
   out.clip = frame.viewProj * vec4f(placed.p, 1.0);
+  if (isCloud(v.info)) {
+    out.clip = vec4f(0.0, 0.0, -2.0, 1.0);   // a cloud's puffs are the cloud pipeline's
+  }
   out.normal = placed.n;
   out.world = placed.p;
   out.local = v.position;
@@ -421,13 +457,15 @@ fn blockFragment(f: BlockOut) -> @location(0) vec4f {
   let rail = role > 5.5 && role < 6.5;
   // Facades that carry windows: ordinary towers, and landmark parts placed early in their colour
   // slot (late in it, they are plain: the telecom tower, the spires, the hill).
-  let building = (role > 1.5 && role < 2.5) || (landmark && fract(rnd * 32.0) < 0.45);
+  let tower = role > 1.5 && role < 2.5;
+  let building = tower || (landmark && fract(rnd * 32.0) < 0.45);
 
-  let family = u32(floor(rnd * 8.0)) % 4u;
-  let grain = 0.90 + 0.20 * cellHash(f.world.xz, rnd);
-  let roof = frame.roofs[family].rgb * grain;
-  // A tower's tone is its district's colour; a tile's, its shade of paper.
+  let grain = 0.94 + 0.12 * cellHash(f.world.xz, rnd);
+  // The lights are on: from dusk to dawn, never by day (2026-11-12, at the user's request).
+  let lamps = smoothstep(0.2, 0.7, night);
+  // A tower's tone is its district, odd if it is a paler one; a tile's, its shade of paper.
   let tone = (u32(f.info.z + 0.5) >> 1u) & 15u;
+  let ink = frame.inks[min(u32(f.info.z + 0.5) >> 5u, ${FlatColours.INKS - 1}u)].rgb;
 
   var albedo: vec3f;
   var gloss = 0.06;
@@ -436,16 +474,28 @@ fn blockFragment(f: BlockOut) -> @location(0) vec4f {
   } else if (ground) {
     albedo = frame.plaza.rgb * (0.99 + 0.05 * rnd);      // plaza tiles
   } else if (role < 2.5) {
-    let block = frame.blocks[tone].rgb * grain;
-    albedo = select(block * 0.58, block, top);           // sunlit roofs, darker facades
+    // A tower is built of the ink its module takes in the code (2026-11-12, at the user's request:
+    // the buildings match the code), a paler one now and then; roofs in the sun, facades darker.
+    var block = towerPaint(ink, tone) * grain;
+    // But Kuala Lumpur's finder modules under the garden's and the square's lawn and the mall's
+    // plaza (Corners.UNDER_LAWN, 0.02 high; no other tower is under a tile's 0.07) are the lawn and
+    // the granite over them. They are never seen in the city, only in the raise, where the code's
+    // red lingered on them until the lawn had climbed over: now they turn with every other colour
+    // (2026-11-20, at the user's request).
+    if (f.size.y < 0.05) {
+      block = select(frame.landmarks[9].rgb, frame.landmarks[15].rgb, f.world.x > 0.0); // KualaLumpur.LAWN, GRANITE
+    }
+    albedo = select(block * 0.62, block, top);
     gloss = select(0.24, 0.10, top);
   } else if (role < 3.5) {
-    albedo = frame.window.rgb;                           // beacon
+    albedo = lampColour(heightNorm, rnd);                // a beacon or a vehicle's lamp; see below
     gloss = 0.0;
   } else if (role < 4.5) {
-    // Traffic: the city's paint over its roof families.
-    albedo = mix(roof, frame.vehicle.rgb, 0.85) * (1.0 + 0.20 * rnd);
+    albedo = vehiclePaint(rnd);                          // traffic, each in a paint of its own
     gloss = 0.30;
+  } else if (role > 12.5) {
+    albedo = sparkColour(rnd);                           // a firework's spark or the fountain's water glows; see below
+    gloss = 0.0;
   } else if (role > 11.5) {
     // The weather: a cloud in its own grey, a touch cool; the sun and the moon glow (see below).
     albedo = vec3f(rnd) * vec3f(0.96, 0.98, 1.0);
@@ -482,14 +532,32 @@ fn blockFragment(f: BlockOut) -> @location(0) vec4f {
     uv = vec2f(dot(f.world, along), f.world.y);
   }
 
-  // Window panes: two per module across, one row per floor. Their edges are anti-aliased with the
-  // screen-space derivative, taken here where control flow is uniform, as WGSL requires.
-  let paneUv = uv * vec2f(2.0, 3.2);
+  // Window panes, their edges anti-aliased with the screen-space derivative, taken here where
+  // control flow is uniform, as WGSL requires. A tower's facade is one of three kinds (2026-11-12,
+  // at the user's request: more detail): windows set in the wall, two per module across and a row
+  // per floor; a curtain wall, bands of glass between thin mullions; or tall narrow windows
+  // between ribs, two floors high. Landmarks keep the first.
+  let kind = select(0u, u32(fract(rnd * 7.31) * 3.0), tower);
+  let paneUv = uv * select(select(vec2f(2.0, 3.2), vec2f(4.0, 3.2), kind == 1u), vec2f(3.0, 1.6), kind == 2u);
+  let frameW = select(select(vec2f(0.16, 0.22), vec2f(0.05, 0.26), kind == 1u), vec2f(0.27, 0.07), kind == 2u);
   let paneAa = min(fwidth(paneUv), vec2f(0.3));
-  let pane = fract(paneUv);
-  let across = smoothstep(0.16 - paneAa.x, 0.16 + paneAa.x, pane.x) * (1.0 - smoothstep(0.84 - paneAa.x, 0.84 + paneAa.x, pane.x));
-  let down = smoothstep(0.24 - paneAa.y, 0.24 + paneAa.y, pane.y) * (1.0 - smoothstep(0.80 - paneAa.y, 0.80 + paneAa.y, pane.y));
-  let inPane = across * down;
+  let pane = abs(fract(paneUv) - 0.5);
+  let across = 1.0 - smoothstep(0.5 - frameW.x - paneAa.x, 0.5 - frameW.x + paneAa.x, pane.x);
+  let down = 1.0 - smoothstep(0.5 - frameW.y - paneAa.y, 0.5 - frameW.y + paneAa.y, pane.y);
+  var inPane = across * down;
+  // A tower of two floors or more has a shop front at the street, a wide pane of glass a module
+  // across under a pale lintel, and a pale coping along the top of its walls.
+  let storeyed = tower && f.size.y > 0.6;
+  let shopAa = min(fwidth(uv.x), 0.3);
+  let shopPane = 1.0 - smoothstep(0.42 - shopAa, 0.42 + shopAa, abs(fract(uv.x) - 0.5));
+  let atStreet = storeyed && !top && f.world.y < 0.36;
+  let fromTop = (0.5 - f.local.y) * f.size.y;
+  let trim = select(0.0, 1.0, storeyed && !top && (fromTop < 0.07 || (f.world.y > 0.36 && f.world.y < 0.42)));
+  if (atStreet) {
+    inPane = shopPane * step(0.13, f.world.y);
+  } else if (trim > 0.5) {
+    inPane = 0.0;
+  }
   // The mall's fins, five to a module, and its lattice of diamonds, two to a module: their lines'
   // widths in screen space, taken here for the same reason.
   let finUv = uv.x * 5.0;
@@ -515,6 +583,13 @@ fn blockFragment(f: BlockOut) -> @location(0) vec4f {
     }
   }
 
+  if (storeyed) {
+    if (top) {
+      albedo = albedo * roofDetail(f.local.xz * f.size.xz, f.size.xz * 0.5, rnd, heightNorm);
+    } else {
+      albedo = albedo * (1.0 + 0.3 * trim);
+    }
+  }
   if (ground && top) {
     // Paving seams on the module grid read as streets.
     let g = abs(fract(uv + 0.5) - 0.5);
@@ -543,8 +618,8 @@ fn blockFragment(f: BlockOut) -> @location(0) vec4f {
     lit = lit * (0.45 + 0.55 * cellHash(cell + 4.0, rnd));
     // A few lights switch on and off, so the skyline is never quite still.
     lit = lit * (0.65 + 0.35 * step(0.30, cellHash(cell, floor(time * 0.4) + rnd * 31.0)));
-    lit = lit * inPane;
-    albedo = albedo * mix(1.0, 0.74, inPane);           // glass reads darker than the wall
+    lit = lit * inPane * select(1.0, 1.6, atStreet);    // shops stay lit
+    albedo = albedo * mix(1.0, 0.70, inPane);           // glass reads darker than the wall
   }
 
   let sun = normalize(frame.sunDir.xyz);
@@ -557,8 +632,8 @@ fn blockFragment(f: BlockOut) -> @location(0) vec4f {
   let groundLight = frame.plaza.rgb * 0.22;
   let ambient = mix(groundLight, skyLight, n.y * 0.5 + 0.5);
   var color = albedo * (ambient * 0.42 + frame.sunColor.rgb * ndl * shadow * 1.15);
-  // Lit windows glow after dark; by day they barely show, and the glass mirrors the sky instead.
-  color = color + frame.window.rgb * lit * (0.10 + 0.90 * night);
+  // Lit windows glow after dark; by day none is lit, and the glass mirrors the sky instead.
+  color = color + frame.window.rgb * lit * lamps;
   if (building && !top) {
     color = color + frame.skyHorizon.rgb * inPane * 0.10 * (1.0 - night);
   }
@@ -571,21 +646,24 @@ fn blockFragment(f: BlockOut) -> @location(0) vec4f {
   }
   emit = emit + frame.window.rgb * lit * dark * 0.3;
   if (landmark && min(u32(rnd * 32.0), 31u) == 20u) {
-    emit = emit + albedo * (0.05 + 0.15 * dark);                // the crystal fountain, lit from within
+    emit = emit + albedo * 0.2 * dark;                          // the crystal fountain, lit from within after dark
   }
-  // The mall's neon: off by day, soft after dark. Its name shines by day too, as a sign does.
+  // The mall's neon: off by day, soft after dark. Its name is white letters by day and lit at night.
   color = color + neon * 0.7 * dark;
   emit = emit + neon * 0.55 * dark;
   if (landmark && min(u32(rnd * 32.0), 31u) == 22u) {
     color = color + albedo * 0.3;
-    emit = emit + albedo * (0.15 + 0.45 * dark);
+    emit = emit + albedo * 0.6 * dark;
   }
 
   let view = normalize(frame.eye.xyz - f.world);
   if (role > 2.5 && role < 3.5) {
-    let pulse = 1.7 + 0.5 * sin(time * 2.0 + rnd * 12.0);
-    color = frame.window.rgb * pulse;                                        // beacon pulse
-    emit = emit + frame.window.rgb * pulse * (0.1 + 0.4 * dark);
+    // A beacon pulses and a vehicle's lamp shines steadily, after dark only: by day a beacon is
+    // its dull housing and a vehicle's lamps are not there at all (see place).
+    let beacon = heightNorm < 0.25 || heightNorm > 0.75;
+    let pulse = select(1.5, 1.7 + 0.5 * sin(time * 2.0 + rnd * 12.0), beacon);
+    color = mix(color * 0.45, albedo * pulse, lamps);
+    emit = emit + albedo * pulse * 0.5 * lamps;
   } else {
     let h = normalize(sun + view);
     color = color + frame.sunColor.rgb * pow(max(dot(n, h), 1e-4), 42.0) * gloss * shadow;
@@ -596,8 +674,7 @@ fn blockFragment(f: BlockOut) -> @location(0) vec4f {
     }
   }
   if (role > 3.5 && role < 4.5) {
-    color = color + frame.vehicle.rgb * 0.30;                    // lifts small boxes off sky and plaza
-    color = color + frame.window.rgb * (0.10 + 0.85 * night);    // headlights after dark
+    color = color + albedo * 0.25;                               // lifts small boxes off sky and plaza
   }
 
   // A meteor strike: the crater chars dark with embers flickering in it; flying fragments glow.
@@ -627,29 +704,33 @@ fn blockFragment(f: BlockOut) -> @location(0) vec4f {
   var toned = pow(aces(color), vec3f(1.0 / 2.2));
   // Slightly richer chroma, so the materials and vehicle paint read as colour, not pastel. Not on
   // steel, glass and concrete: there it only inflates the sun's warm cast into pink.
-  let chroma = select(1.45, 1.05, landmark || rail);
+  let chroma = select(1.45, 1.05, landmark || rail || tower);
   toned = clamp(mix(vec3f(luma(toned)), toned, chroma), vec3f(0.0), vec3f(1.0));
   // Haze thickens from the plate's near edge, and drifts across the city in banks that grow
   // denser with height, so they swallow whole stretches of the skyline, the landmarks' upper
   // floors first, and let them go again.
-  let near = length(frame.eye.xyz) - frame.scene.x;
-  let depth = 1.0 - exp(-max(length(frame.eye.xyz - f.world) - near, 0.0) * 0.06);
-  // The banks ride the wind downwind (+x), as the wind streaks do, only slower.
-  let drift = vec2f(f.world.x * 0.09 - time * 0.11, f.world.z * 0.09 - time * 0.02) + vec2f(f.world.y * 0.06);
-  let bank = smoothstep(0.30, 0.78, valueNoise(drift));
-  let aloft = smoothstep(0.5, max(frame.scene.y * 0.55, 1.0), f.world.y);
-  // It rolls in from upwind (-x) when it comes (2026-11-07, at the user's request): ahead of its
-  // front the air is still clear. The front hugs the ground, running ahead along the streets while
-  // the air above fills in behind it, and billows as it comes; it crosses the plate as frame.ink.w
-  // goes from 0 to 1.
-  let billow = 7.0 * (valueNoise(vec2f(f.world.z * 0.11 + time * 0.3, f.world.y * 0.12 + 5.0)) - 0.5);
-  let edge = billow - 0.5 * f.world.y;
-  let crossing = frame.scene.x + 0.5 * frame.scene.y + 4.0;
-  let frontX = mix(-1.0, 1.0, frame.ink.w) * crossing * 1.3 + edge;
-  let blown = select(1.0 - smoothstep(frontX - 4.0, frontX + 4.0, f.world.x), 1.0, frame.ink.w >= 1.0);
-  // Its leading edge is a thicker wall, so it is seen to come.
-  let wall = select(smoothstep(frontX - 12.0, frontX - 3.0, f.world.x) * (1.0 - smoothstep(frontX - 3.0, frontX + 3.0, f.world.x)), 0.0, frame.ink.w >= 1.0);
-  let fog = haze * clamp(blown * (0.22 + 0.45 * depth + 0.62 * bank * (0.35 + 0.65 * aloft)) + 0.45 * wall, 0.0, 0.94);
+  // Only in haze: two noise lookups a pixel that clear air has no use for.
+  var fog = 0.0;
+  if (haze > 0.0) {
+    let near = length(frame.eye.xyz) - frame.scene.x;
+    let depth = 1.0 - exp(-max(length(frame.eye.xyz - f.world) - near, 0.0) * 0.06);
+    // The banks ride the wind downwind (+x), as the wind streaks do, only slower.
+    let drift = vec2f(f.world.x * 0.09 - time * 0.11, f.world.z * 0.09 - time * 0.02) + vec2f(f.world.y * 0.06);
+    let bank = smoothstep(0.30, 0.78, valueNoise(drift));
+    let aloft = smoothstep(0.5, max(frame.scene.y * 0.55, 1.0), f.world.y);
+    // It rolls in from upwind (-x) when it comes (2026-11-07, at the user's request): ahead of its
+    // front the air is still clear. The front hugs the ground, running ahead along the streets while
+    // the air above fills in behind it, and billows as it comes; it crosses the plate as frame.front.w
+    // goes from 0 to 1.
+    let billow = 7.0 * (valueNoise(vec2f(f.world.z * 0.11 + time * 0.3, f.world.y * 0.12 + 5.0)) - 0.5);
+    let edge = billow - 0.5 * f.world.y;
+    let crossing = frame.scene.x + 0.5 * frame.scene.y + 4.0;
+    let frontX = mix(-1.0, 1.0, frame.front.w) * crossing * 1.3 + edge;
+    let blown = select(1.0 - smoothstep(frontX - 4.0, frontX + 4.0, f.world.x), 1.0, frame.front.w >= 1.0);
+    // Its leading edge is a thicker wall, so it is seen to come.
+    let wall = select(smoothstep(frontX - 12.0, frontX - 3.0, f.world.x) * (1.0 - smoothstep(frontX - 3.0, frontX + 3.0, f.world.x)), 0.0, frame.front.w >= 1.0);
+    fog = haze * clamp(blown * (0.22 + 0.45 * depth + 0.62 * bank * (0.35 + 0.65 * aloft)) + 0.45 * wall, 0.0, 0.94);
+  }
   toned = mix(toned, mix(frame.skyHorizon.rgb, backdrop(), 0.4), fog);
 
   if (role > 6.5 && role < 7.5) {
@@ -661,10 +742,11 @@ fn blockFragment(f: BlockOut) -> @location(0) vec4f {
     emit = emit + toned * 1.2;
   }
   if (role > 9.5 && role < 10.5) {
-    toned = signalColour(rnd);                                                  // a lamp shines by day too
-    emit = emit + toned * (0.3 + 0.9 * dark);
+    toned = signalColour(rnd);                                                  // a traffic light shows by day too
+    emit = emit + toned * (0.12 + 1.1 * dark);
   }
-  if (role > 11.5 && heightNorm > 0.9) {
+  let weather = role > 11.5 && role < 12.5;
+  if (weather && heightNorm > 0.9) {
     // The sun: deep orange on the horizon, warm white high up (rnd is how high), a dim orange
     // through haze.
     let high = smoothstep(0.0, 0.45, rnd);
@@ -672,20 +754,32 @@ fn blockFragment(f: BlockOut) -> @location(0) vec4f {
     toned = mix(toned, vec3f(1.0, 0.50, 0.22), 0.65 * haze);
     toned = mix(toned, mix(frame.skyHorizon.rgb, backdrop(), 0.4), 0.35 * haze);
     emit = emit + toned * (0.6 + 0.35 * high) * (1.0 - 0.75 * haze);
-  } else if (role > 11.5 && heightNorm > 0.5) {
+  } else if (weather && heightNorm > 0.5) {
     // The moon: pale, glowing after dark and faint by day, brighter the more of it is lit (rnd).
     toned = vec3f(0.90, 0.93, 1.0);
     emit = emit + toned * (0.15 + 0.75 * night) * (0.45 + 0.55 * rnd);
-  } else if (role > 11.5 && heightNorm > 0.0) {
+  } else if (weather && heightNorm > 0.0) {
     // A storm cloud lit from inside by the bolt leaving it.
     let lit = heightNorm * 2.0;
     toned = mix(toned, vec3f(0.86, 0.90, 1.0), 0.7 * lit);
     emit = emit + vec3f(0.55, 0.62, 0.95) * lit;
   }
+  if (role > 12.5) {
+    if (rnd < 0.1) {
+      // The fountain's water (2026-11-09): pale, catching the sky by day, lit from within at night
+      // like the crystal bowls it falls through.
+      toned = mix(vec3f(0.82, 0.92, 1.0), frame.skyHorizon.rgb, 0.2);
+      emit = emit + vec3f(0.62, 0.86, 1.0) * heightNorm * (0.1 + 0.55 * dark);
+    } else {
+      // A firework's spark (2026-11-09): its own colour, its glow how much of its life is left.
+      toned = sparkColour(rnd);
+      emit = emit + toned * heightNorm * (1.0 + 0.9 * dark);
+    }
+  }
   if (role > 10.5 && role < 11.5) {
     let screen = billboard(f.local);
     toned = mix(toned, screen.rgb, screen.a);
-    emit = emit + screen.rgb * screen.a * (0.4 + 0.8 * dark);
+    emit = emit + screen.rgb * screen.a * (0.25 + 0.95 * dark);
   }
   // Haze swallows light as well as colour.
   emit = emit * (1.0 - 0.75 * fog) * (1.0 - flatness);
@@ -695,12 +789,84 @@ fn blockFragment(f: BlockOut) -> @location(0) vec4f {
   // darker, so a block in its final colour still reads as a block.
   var flatColor = frame.paper.rgb;
   if (role > 1.5 && role < 2.5) {
-    flatColor = frame.inks[(u32(f.info.z + 0.5) >> 5u) & ${FlatColours.INKS - 1}u].rgb;
+    flatColor = ink;
   } else if (role > 0.5 && role < 1.5) {
     flatColor = paperAt(tone);
+  } else if (landmark || rail) {
+    flatColor = codeAt(f.world.xz);   // a landmark turns into the modules it stands on
   }
-  flatColor = flatColor * select(0.62, 1.0, top);
+  // (A landmark's walls less so: they are tall, and dark they would stand out over the code.)
+  flatColor = flatColor * select(select(0.62, 0.88, landmark || rail), 1.0, top);
   return vec4f(mix(toned + emit, flatColor, flatness), 1.0);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Clouds (2026-11-12, at the user's request: like real clouds; as boxes they never did). Each puff
+// is a box in the traffic's buffer like any weather shape, but drawn here as the soft ball inside
+// it: a ray per pixel through that ball, thick and white through its middle and thinning to
+// nothing at its ragged edge, blended over the sky, so a heap of them reads as one billowing cloud.
+// ---------------------------------------------------------------------------------------------
+
+// Whether an instance is a cloud's puff: a weather shape that is neither the sun nor the moon.
+fn isCloud(info: vec4f) -> bool {
+  return info.x > 11.5 && info.x < 12.5 && info.y <= 0.5;
+}
+
+struct CloudOut {
+  @builtin(position) clip: vec4f,
+  @location(0) world: vec3f,
+  @location(1) @interpolate(flat) centre: vec3f,
+  @location(2) @interpolate(flat) radii: vec3f,
+  @location(3) @interpolate(flat) look: vec2f,   // its grey; how brightly a bolt lights it from inside
+}
+
+@vertex
+fn cloudVertex(v: BlockIn) -> CloudOut {
+  var out: CloudOut;
+  let size = v.scale * (1.0 - leaving());
+  let world = v.offset + v.position * size;
+  out.clip = frame.viewProj * vec4f(world, 1.0);
+  if (!isCloud(v.info) || size.x < 0.01) {
+    out.clip = vec4f(0.0, 0.0, -2.0, 1.0);
+  }
+  out.world = world;
+  out.centre = v.offset;
+  out.radii = max(size * 0.5, vec3f(1e-3));
+  out.look = vec2f(v.info.w, v.info.y);
+  return out;
+}
+
+@fragment
+fn cloudFragment(c: CloudOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
+  // The ray in the ball's own space, where it is a unit sphere.
+  let ro = (frame.eye.xyz - c.centre) / c.radii;
+  let rd = normalize(c.world - frame.eye.xyz) / c.radii;
+  let a = dot(rd, rd);
+  let b = dot(ro, rd);
+  let disc = b * b - a * (dot(ro, ro) - 1.0);
+  let hit = ro + rd * ((-b - sqrt(max(disc, 0.0))) / a);
+  let at = c.centre + hit * c.radii;
+  // How deep the ray goes through: 1 through the middle, 0 at the rim. Wisps eat into the rim.
+  let wisp = valueNoise(vec2f(at.x + at.y * 0.7, at.z - at.y * 0.7) * 1.6 + frame.forward.w * 0.03);
+  let through = disc / a - 0.30 * wisp;
+  let alpha = smoothstep(0.0, 0.5, through);
+  if (!front || alpha <= 0.0) {
+    return vec4f(0.0);
+  }
+  let n = normalize(hit / c.radii);
+  let sun = normalize(frame.sunDir.xyz);
+  let night = frame.sunDir.w;
+  // Lit from above and from the sun's side, softly, as light passes through a cloud; the base
+  // is in its own shade.
+  let wrap = max((dot(n, sun) + 0.6) / 1.6, 0.0);
+  let albedo = vec3f(c.look.x) * vec3f(0.96, 0.98, 1.0) * (0.96 + 0.08 * wisp);
+  let skyLight = frame.skyHorizon.rgb * 0.62 + vec3f(0.78, 0.84, 1.0) * frame.window.w;
+  let ambient = mix(skyLight * 0.5, skyLight, n.y * 0.5 + 0.5);
+  var color = albedo * (ambient * 0.55 + frame.sunColor.rgb * wrap * 0.95);
+  var toned = pow(aces(color), vec3f(1.0 / 2.2));
+  toned = mix(toned, vec3f(0.86, 0.90, 1.0), 1.4 * c.look.y);
+  toned = toned + vec3f(0.55, 0.62, 0.95) * 2.0 * c.look.y;
+  return vec4f(toned, alpha);
 }
 
 // A lit line of half-width w (in its pattern's cells) at distance d from its middle, smoothed over
@@ -709,6 +875,84 @@ fn blockFragment(f: BlockOut) -> @location(0) vec4f {
 fn neonLine(d: f32, w: f32, aa: f32) -> f32 {
   let sharp = 1.0 - smoothstep(w - aa, w + aa, d);
   return mix(sharp, 2.0 * w, smoothstep(w, 4.0 * w, aa));
+}
+
+// A tower's colour in the city: its ink, as paint in the light (the tone curve lifts what is
+// lit, so the ink goes in deeper than it shows), an odd tone a paler one.
+fn towerPaint(ink: vec3f, tone: u32) -> vec3f {
+  let paint = mix(ink, vec3f(0.93, 0.92, 0.90), 0.22 * f32(tone & 1u));
+  return pow(paint, vec3f(TOWER_DEPTH)) * TOWER_LIFT;
+}
+
+const TOWER_DEPTH = 1.7;
+const TOWER_LIFT = 0.95;
+
+// What is on a tower's roof (2026-11-12, at the user's request: more detail), as a factor on its
+// colour: a pale parapet round a darker deck, a plant room and a smaller unit each with its
+// shadow, and on the tall towers a helipad, a ring round an H. [p] is the point from the roof's middle and
+// [half] the roof's half size, in the city's units; nothing here needs a derivative.
+fn roofDetail(p: vec2f, half: vec2f, rnd: f32, height: f32) -> f32 {
+  let edge = min(half.x - abs(p.x), half.y - abs(p.y));
+  if (edge < 0.07) {
+    return 1.16;
+  }
+  let h = u32(rnd * 65535.0);
+  var shade = 0.84;
+  if (height > 0.62) {
+    let r = length(p);
+    let ring = 0.55 * min(half.x, half.y);
+    let bars = abs(abs(p.x) - ring * 0.3) < 0.025 && abs(p.y) < ring * 0.45;
+    let cross = abs(p.y) < 0.025 && abs(p.x) < ring * 0.3;
+    if (abs(r - ring) < 0.03 || bars || cross) {
+      return 1.25;
+    }
+    return shade;
+  }
+  for (var k = 0u; k < 2u; k = k + 1u) {
+    let at = (vec2f(unit(h + k * 31u + 1u), unit(h + k * 31u + 2u)) - 0.5) * (half * 1.1);
+    let size = mix(vec2f(0.07, 0.05), vec2f(0.15, 0.11), unit(h + k * 31u + 3u)) * select(1.0, 0.7, k == 1u);
+    let d = abs(p - at) - size;
+    if (max(d.x, d.y) < 0.0) {
+      return 1.12 - 0.1 * f32(k);
+    }
+    let s = abs(p - at - vec2f(0.035, 0.035)) - size;
+    if (max(s.x, s.y) < 0.0) {
+      shade = 0.66;
+    }
+  }
+  return shade;
+}
+
+// A lamp's colour: a beacon's (its glow 0 or 1) is the hour's warm window light; a vehicle's lamp
+// (its glow a half) is by its random slot a red tail light, a white headlight or a warm cabin light.
+fn lampColour(glow: f32, rnd: f32) -> vec3f {
+  if (glow < 0.25 || glow > 0.75) {
+    return frame.window.rgb;
+  }
+  if (rnd < 0.3) {
+    return vec3f(1.0, 0.10, 0.07);
+  }
+  if (rnd < 0.6) {
+    return vec3f(1.0, 0.95, 0.80);
+  }
+  return vec3f(1.0, 0.80, 0.50) * 0.7;
+}
+
+// A vehicle's paint by its random slot (2026-11-12, at the user's request: each its own colour):
+// red, orange, yellow, white, royal blue, grass green (not the blue-green of that morning, which
+// read as tiffany green and the user did not like), silver and black.
+fn vehiclePaint(rnd: f32) -> vec3f {
+  var paints = array<vec3f, 8>(
+    vec3f(0.86, 0.14, 0.13),
+    vec3f(0.96, 0.52, 0.08),
+    vec3f(0.98, 0.78, 0.08),
+    vec3f(0.93, 0.94, 0.95),
+    vec3f(0.10, 0.24, 0.72),
+    vec3f(0.22, 0.52, 0.12),
+    vec3f(0.62, 0.65, 0.69),
+    vec3f(0.13, 0.14, 0.17),
+  );
+  return paints[min(u32(rnd * 8.0), 7u)];
 }
 
 // The billboard's letter colours, a message each: pink, cyan, violet, amber and green.
@@ -751,8 +995,32 @@ fn billboard(local: vec3f) -> vec4f {
   if (u >= 0.0 && u <= shown.z) {
     ink = textureSampleLevel(screenAtlas, screenSampler, vec2f(u, (shown.x + p.y) / 8.0), 0.0).r;
   }
-  let letters = neonColour(fract(shown.x * 0.2 + 0.05));
+  // The letters change colour (2026-11-12, at the user's request): a slow rainbow that runs
+  // across the screen, each message starting somewhere else on it.
+  let hue = frame.forward.w * 0.12 + p.x * 0.35 + shown.x * 0.2;
+  let letters = 0.62 + 0.38 * cos(6.2832 * (hue + vec3f(0.0, 0.33, 0.67)));
   return vec4f(mix(vec3f(0.015, 0.02, 0.045), letters, ink) * (0.35 + 0.65 * abs(edge)), 1.0);
+}
+
+// A firework's colour by its random slot (2026-11-09, at the user's request: festive, gold the most
+// common): gold, red, white, teal, magenta. Under 0.1 is the fountain's water.
+fn sparkColour(rnd: f32) -> vec3f {
+  if (rnd < 0.1) {
+    return vec3f(0.80, 0.92, 1.0);
+  }
+  if (rnd < 0.45) {
+    return vec3f(1.0, 0.74, 0.24);
+  }
+  if (rnd < 0.58) {
+    return vec3f(1.0, 0.24, 0.20);
+  }
+  if (rnd < 0.70) {
+    return vec3f(1.0, 0.97, 0.90);
+  }
+  if (rnd < 0.84) {
+    return vec3f(0.22, 0.95, 0.85);
+  }
+  return vec3f(1.0, 0.30, 0.80);
 }
 
 // A traffic light's lamp: red, amber or green, as Vehicles.signals puts them in the random slot.
@@ -812,10 +1080,91 @@ fn skyFragment(s: SkyOut) -> @location(0) vec4f {
   // lights that too.
   sky = mix(backdrop() + vec3f(0.45, 0.48, 0.6) * frame.window.w, sky, smoothstep(-0.30, 0.04, dir.y));
 
-  // Flat, the plate itself is the code's paper, the same size as the city's platform, so nothing
-  // grows as the city folds; the screen around it takes a deeper colour of the same sky.
-  let surround = mix(frame.skyTop.rgb, backdrop(), 0.35);
-  return vec4f(mix(sky, surround, wash()), 1.0);
+  // At night (2026-11-09, at the user's request) the sky is lit a little at the top of the screen
+  // and falls away to black at the bottom, behind the panel, whatever the camera looks at; the
+  // stars twinkle in it and now and then one shoots. A flash still lights it all.
+  let night = smoothstep(0.35, 0.95, frame.sunDir.w);
+  let up = clamp(s.ndc.y * 0.5 + 0.5, 0.0, 1.0);
+  let dark = frame.skyTop.rgb * 1.3 * pow(up, 1.7);
+  sky = mix(sky, dark, night * (1.0 - frame.window.w));
+  // A pixel's height on screen, in device units and in the sky's radians (frame.stars.z is the
+  // screen's height in pixels).
+  let pixel = 2.0 / max(frame.stars.z, 1.0);
+  let px = pixel * tanHalf;
+  // Over the upper half of the screen: the camera looks down so far that the sky behind the city
+  // is mostly below the horizon, so it cannot be by height above it.
+  let shown = frame.stars.y * night * smoothstep(0.35, 0.7, up);
+  // Not worked out by day, nor behind the code: most of the screen is sky.
+  if (night > 0.0 && frame.eye.w < 1.0) {
+    sky = sky + vec3f(0.92, 0.95, 1.0) * stars(dir, px, frame.stars.x, frame.forward.w) * shown;
+    let onScreen = vec2f(s.ndc.x * aspect, s.ndc.y);
+    sky = sky + vec3f(0.95, 0.97, 1.0) * shootingStars(onScreen, frame.forward.w, frame.stars.x, pixel) * frame.stars.y * night;
+  }
+
+  // Flat, the whole screen is the code's paper (2026-11-12, at the user's request: no pale card
+  // on a darker screen, just the code), so the plate is lost in it and only the modules show.
+  return vec4f(mix(sky, frame.paper.rgb, wash()), 1.0);
+}
+
+// The stars (2026-11-09): one or none in each cell of a grid over the sky by bearing and height,
+// placed and sized by the city's seed, each twinkling at its own pace. [px] is how much of the sky
+// a pixel spans, so they stay a pixel or two across at any zoom.
+fn stars(dir: vec3f, px: f32, seed: f32, t: f32) -> f32 {
+  let cell = 0.012;
+  let p = vec2f(atan2(dir.x, dir.z), asin(clamp(dir.y, -1.0, 1.0))) / cell;
+  let c = floor(p);
+  let salt = 3.0 + seed * 7.0;
+  if (cellHash(c, salt) > 0.26) {
+    return 0.0;
+  }
+  let at = c + vec2f(0.2, 0.2) + 0.6 * vec2f(cellHash(c, salt + 1.0), cellHash(c, salt + 2.0));
+  let size = (1.1 + 1.6 * pow(cellHash(c, salt + 3.0), 3.0)) * px / cell;
+  let d = length((p - at) * vec2f(cos(c.y * cell), 1.0));
+  let core = 1.0 - smoothstep(size * 0.3, size, d);
+  let twinkle = 0.55 + 0.45 * sin(t * (1.3 + 2.6 * cellHash(c, salt + 4.0)) + 6.2832 * cellHash(c, salt + 5.0));
+  return core * twinkle * (0.35 + 0.65 * cellHash(c, salt + 6.0));
+}
+
+// Shooting stars (2026-11-09, at the user's request): about every three seconds, two to four
+// apart, a group of one to four (often one, now and then four), as they come in a real shower:
+// within a moment of each other, each streaking out of the group's radiant, a point high above the
+// top of the screen they all seem to fly from, a little off it each. A thin streak with a fading
+// tail, gone in half a second or so. A function of the seconds alone, so a tour shows the same
+// ones every time. [p] is the point on screen in device units with x widened by the aspect; [w] is
+// a pixel's height in those units.
+fn shootingStars(p: vec2f, t: f32, seed: f32, w: f32) -> f32 {
+  var glow = 0.0;
+  let slot = floor(t / 3.0);
+  for (var k = -1; k <= 0; k = k + 1) {
+    let i = slot + f32(k);
+    let h = bitcast<u32>(i32(i)) ^ u32(seed * 65536.0);
+    let g = unit(h * 13u + 1u);
+    let members = select(select(select(4u, 3u, g < 0.88), 2u, g < 0.66), 1u, g < 0.38);
+    let radiant = vec2f((unit(h * 13u + 2u) * 2.0 - 1.0) * frame.up.w * 1.2, 1.05 + 0.6 * unit(h * 13u + 3u));
+    let begin = i * 3.0 + unit(h * 13u + 4u);
+    for (var m = 0u; m < members; m = m + 1u) {
+      let q = h * 13u + 23u * (m + 1u);
+      let start = begin + select(0.0, 0.8 * unit(q + 1u), m > 0u);
+      let life = 0.45 + 0.35 * unit(q + 2u);
+      let age = t - start;
+      if (age < 0.0 || age > life) {
+        continue;
+      }
+      let origin = vec2f((unit(q + 3u) * 1.6 - 0.8) * frame.up.w, 0.3 + 0.6 * unit(q + 4u));
+      let away = normalize(origin - radiant + vec2f(1e-4, 0.0));
+      let skew = (unit(q + 5u) - 0.5) * 0.12;
+      let way = vec2f(away.x * cos(skew) - away.y * sin(skew), away.x * sin(skew) + away.y * cos(skew));
+      let travel = 0.3 + 0.3 * unit(q + 6u);
+      let head = origin + way * travel * (age / life);
+      let tail = 0.14 + 0.1 * unit(q + 7u);
+      let a = head - way * tail;
+      let along = clamp(dot(p - a, way) / tail, 0.0, 1.0);
+      let d = length(p - a - way * along * tail);
+      let fade = sin(3.14159265 * age / life) * (0.6 + 0.4 * unit(q + 8u));
+      glow = glow + (1.0 - smoothstep(w * 0.6, w * 1.6, d)) * along * along * fade;
+    }
+  }
+  return glow;
 }
 
 // ---------------------------------------------------------------------------------------------

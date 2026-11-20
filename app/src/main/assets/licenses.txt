@@ -33,6 +33,10 @@ INSPIRATION (ideas only, no code)
   "PNB 118" by Henryer Robinson (Sketchfab, CC BY 4.0), a visual reference
   for the supertall's shape; none of its geometry is used.
 
+FLAG OF KUALA LUMPUR (the banner the plane tows)
+  Drawn after "Flag of Kuala Lumpur, Malaysia.svg" on Wikimedia Commons,
+  public domain.
+
 ==============================================================================
 MIT LICENSE
 ==============================================================================

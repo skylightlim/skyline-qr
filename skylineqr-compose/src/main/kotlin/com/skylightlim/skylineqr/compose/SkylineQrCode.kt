@@ -35,7 +35,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
@@ -166,10 +165,87 @@ class SkylineQrState {
     return true
   }
 
-  /** What of the sky is at ([u], [v]) of the view; [onResult] hears it on the main thread, null for nothing. */
-  internal fun pick(u: Float, v: Float, onResult: (SkyPart?) -> Unit) {
-    val renderer = renderer
-    if (renderer == null || flat) onResult(null) else renderer.pick(u, v, onResult)
+  /** Fireworks from ([u], [v]) of the view, 0..1 from the top left. False if none went up. */
+  internal fun fireworks(u: Float, v: Float): Boolean {
+    val renderer = renderer ?: return false
+    if (flat) return false
+    renderer.fireworks(u, v)
+    return true
+  }
+
+  /**
+   * True while the tour runs (2026-11-09), from [startTour] until it lands in the code or
+   * [stopTour] stops it; an app hides its controls meanwhile.
+   */
+  var touring by mutableStateOf(false)
+    private set
+
+  /** Set by a touch that stopped the tour, so its tap or long press does nothing more. */
+  internal var swallow = false
+
+  /**
+   * Flies the camera past every landmark, the same every time, under a clear sky by day or night,
+   * then folds the city into the code. A folded code unfolds first. Any touch on the city stops it.
+   */
+  fun startTour() {
+    val renderer = renderer ?: return
+    if (fallback) return
+    stopTimelapse()
+    touring = true
+    flat = false
+    resetCamera()
+    renderer.startTour { completed ->
+      touring = false
+      if (completed) flat = true
+    }
+  }
+
+  /** Stops the tour: the camera eases back to the city's own view. */
+  fun stopTour() {
+    if (!touring) return
+    touring = false
+    renderer?.stopTour()
+  }
+
+  /**
+   * True while the timelapse runs (2026-11-20), from [startTimelapse] until it reaches night or
+   * [stopTimelapse] stops it; an app hides its controls meanwhile, as for the tour.
+   */
+  var timelapsing by mutableStateOf(false)
+    private set
+
+  /** The timelapse running now, so a stopped one's late word can't end a newer one. */
+  private var lapse: Any? = null
+
+  /**
+   * Runs the clock from the middle of the day to night in fifteen seconds, under the weather
+   * shown, wherever the camera is; the camera can still be turned. A folded code unfolds first.
+   * A tap on the city stops it. [onEnd] hears whether it reached night (true: the city then stays
+   * at Night, so an app should show Night as its time) or was stopped (false: the city eases back
+   * to its own hour).
+   */
+  fun startTimelapse(onEnd: (completed: Boolean) -> Unit = {}) {
+    val renderer = renderer ?: return
+    if (fallback) return
+    stopTour()
+    val run = Any()
+    lapse = run
+    timelapsing = true
+    flat = false
+    renderer.startTimelapse { completed ->
+      if (lapse !== run) return@startTimelapse
+      lapse = null
+      timelapsing = false
+      onEnd(completed)
+    }
+  }
+
+  /** Stops the timelapse: the sky eases back to the city's own hour. */
+  fun stopTimelapse() {
+    if (!timelapsing) return
+    lapse = null
+    timelapsing = false
+    renderer?.stopTimelapse()
   }
 
   internal var renderer: CityRenderer? = null
@@ -238,10 +314,10 @@ class SkylineQrState {
  * A link as a city that folds flat into its scannable QR code.
  *
  * Tap to switch between the city and the code. In the city, drag to turn it, pinch to zoom, and
- * long-press to bring a meteor down on that spot (it rebuilds itself). Given [onSkyLongPress], a
- * long press on a cloud, the sun or the moon goes there instead, with where it was, so an app can
- * offer a setting for the sky; [clouds] off blows the clouds away (and back in when it is on);
- * [SkylineQrState.resetCamera] puts the camera back. The same [url], [identityScope], [generatorVersion] and [city]
+ * long-press for [longPress]: a meteor on that spot (it rebuilds itself) or fireworks going up from
+ * it. [clouds] off blows the clouds away (and back in when it is on);
+ * [SkylineQrState.resetCamera] puts the camera back, [SkylineQrState.startTour] flies it past
+ * every landmark, and [SkylineQrState.startTimelapse] runs it from day to night. The same [url], [identityScope], [generatorVersion] and [city]
  * always build the same city; [time] and [weather] only light it. [city] is Kuala Lumpur, with its
  * landmarks and monorail, unless an app asks for the generic city without them. A saved or shared city should store its
  * [generatorVersion] and pass it back here. [billboard] is what the city's screen shows, a message at a
@@ -261,7 +337,7 @@ fun SkylineQrCode(
   haptics: Boolean = true,
   billboard: List<String> = emptyList(),
   clouds: Boolean = true,
-  onSkyLongPress: ((SkyPart, Offset) -> Unit)? = null,
+  longPress: LongPress = LongPress.METEOR,
   onEvent: (SkylineEvent) -> Unit = {},
 ) {
   var built by remember { mutableStateOf<City?>(null) }
@@ -293,7 +369,7 @@ fun SkylineQrCode(
     if (haptics) feedback.performHapticFeedback(if (state.flat) HapticFeedbackType.ToggleOn else HapticFeedbackType.ToggleOff)
   }
   val flat = state.flat
-  val skyPress by rememberUpdatedState(onSkyLongPress)
+  val pressFor by rememberUpdatedState(longPress)
   val meteor: (Float, Float) -> Unit = { u, v ->
     if (!calm && state.strike(u, v) && haptics) {
       feedback.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -319,6 +395,9 @@ fun SkylineQrCode(
           var coasting: Job? = null
           awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false)
+            // A touch while the tour flies stops it, and does nothing else.
+            state.swallow = state.touring
+            state.stopTour()
             coasting?.cancel()
             val tracker = VelocityTracker()
             tracker.addPointerInputChange(down)
@@ -340,7 +419,7 @@ fun SkylineQrCode(
       }
       .pointerInput(state) {
         detectTransformGestures { _, pan, zoom, _ ->
-          if (!state.flat) {
+          if (!state.flat && !state.swallow) {
             state.turn(pan.x, pan.y, size.width, size.height)
             state.zoom(zoom)
           }
@@ -350,24 +429,21 @@ fun SkylineQrCode(
       // before the morph could start. Apps put the camera back with resetCamera().
       .pointerInput(state) {
         detectTapGestures(
-          onTap = { toggle() },
-          // A long press asks the renderer what of the sky is under it first: a cloud, the sun or
-          // the moon goes to the app, anything else brings the meteor down.
+          onTap = {
+            when {
+              state.swallow -> {}
+              // A tap during the timelapse stops it; a drag still turns the city.
+              state.timelapsing -> state.stopTimelapse()
+              else -> toggle()
+            }
+          },
           onLongPress = { at ->
             val u = at.x / size.width
             val v = at.y / size.height
-            val sky = skyPress
-            if (sky == null) {
-              meteor(u, v)
-            } else {
-              state.pick(u, v) { part ->
-                if (part == null) {
-                  meteor(u, v)
-                } else {
-                  if (haptics) feedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                  sky(part, at)
-                }
-              }
+            when {
+              state.swallow -> {}
+              pressFor == LongPress.METEOR -> meteor(u, v)
+              !calm && state.fireworks(u, v) && haptics -> feedback.performHapticFeedback(HapticFeedbackType.LongPress)
             }
           },
         )

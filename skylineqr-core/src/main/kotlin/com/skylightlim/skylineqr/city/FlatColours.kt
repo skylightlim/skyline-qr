@@ -7,19 +7,19 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
- * The flat code's colours (2026-11-07 revision, at the user's request: "look lively", after two
- * many-coloured pictures of Kuala Lumpur): every part of the city has its own colour, as each
- * building does in those pictures, and still no gradient (2026-10-31). Every dark module is a
- * square of one of [INKS] inks: [HUES] lively hues, each in a full and a softer shade. A module
- * takes its district's hue in either shade, at random, so each district is a mosaic of its colour
- * with ragged, interlocking borders and nothing drifting across it; about one in [ACCENTS] takes
- * a neighbouring hue instead, like the odd leaf of another colour. A finder is one ink whole, since
- * its solid middle is the largest area with no paper in it. The hour and weather still tint every
- * ink a little ([HOUR_SHARE] of [Atmosphere.ink]). Every light module is a square of the hour's
- * paper in one of four shades, like paving.
- *
- * The city keeps its districts: each one's towers are built of its colour ([block]), and the morph
- * washes them to their inks before they land.
+ * The flat code's colours (2026-11-12, second revision, at the user's request: the sixteen vivid
+ * Pantone colours of that morning were "too vibrant and saturated"; he asked for subtler ones):
+ * Pantone colours of middling strength (a third pick that evening: the muted ones wanted to be "a
+ * bit more lively and colorful", with no brown) from the chart at pantone-colours.com, without the
+ * magenta pair since 2026-11-20 (the user's call, after trying two other palettes that day), and
+ * the city's towers are built of the very ink their module takes, so a district looks the same
+ * standing as it does folded. Every dark module is a square of one of [INKS] inks: [HUES] hues
+ * round the wheel, each in two Pantone shades. A module takes its district's hue in either shade,
+ * at random, so each district is a mosaic of its colour with ragged, interlocking borders and
+ * nothing drifting across it; about one in ten takes a neighbouring hue instead, like the odd leaf
+ * of another colour. A finder is one ink whole, since its solid middle is the largest area with no
+ * paper in it. The inks are the same at every hour and in all weather; the hour only tints the
+ * paper. Every light module is a square of the hour's paper in one of four shades, like paving.
  *
  * What makes it scan: inside a solid dark area, ZXing's HybridBinarizer takes an 8 px block for
  * one tone only while its pixels span at most 24 levels; past that, it thresholds between them
@@ -27,54 +27,68 @@ import kotlin.math.min
  * threshold down well before that: at 42 px a module, where a module is wider than its window, 12
  * levels failed. So every ink has exactly [INK_LUMA] under ZXing's own (R + 2G + B) / 4 and they lie
  * within [INK_601_BAND] of [INK_601] under the camera's BT.601; any two can touch. Those two
- * brightnesses together leave only a narrow plane of colours: crimson, pinks, magenta, purples,
- * blue, teal and green fit; orange and yellow cannot, being bright colours, and come out brown, so
- * they are left out. Each hue is solved onto that plane by least squares, keeping it as close to
- * itself as it can be. The paper's shades span under [PAPER_SPREAD].
+ * brightnesses together leave only a narrow plane of colours, through the greys: muted colours of
+ * every hue lie on it or next to it, vivid ones only from rose round through blue to green. The
+ * Pantone colours were picked for lying next to that plane, and each is then moved the least
+ * distance onto it ([solve]), most by a few levels. The paper's shades span under [PAPER_SPREAD].
  *
- * The renderer gets every ink from [ink] and every tower's colour from [block] through its frame
- * uniform, so the screen shows exactly what the tests scan.
+ * The renderer gets every ink from [ink] through its frame uniform, for the towers and the code
+ * alike, so the screen shows exactly what the tests scan.
  */
 object FlatColours {
 
-  /** Every ink's brightness under ZXing's luma, well under half the paper's 0.8. */
-  const val INK_LUMA = 0.32f
+  /**
+   * Every ink's brightness under ZXing's luma, well under half the paper's 0.8 (2026-11-12: up
+   * from 0.32, where every hue but blue and violet was a deep, dull shade of itself; 0.40 was
+   * livelier still but a small code no longer scanned on the darker paper of a stormy night).
+   */
+  const val INK_LUMA = 0.36f
 
-  /** Every ink's brightness under the camera's BT.601, give or take [INK_601_BAND]. */
-  const val INK_601 = 0.31f
+  /**
+   * Every ink's brightness under the camera's BT.601, give or take [INK_601_BAND]: the same as
+   * under ZXing's, which is where the greys lie, so muted colours of any hue fit.
+   */
+  const val INK_601 = 0.36f
   const val INK_601_BAND = 0.025f
 
   /**
-   * The lively hues, in order round the wheel from warm to cool: crimson, pink, magenta, purple,
-   * violet, blue, teal, green. Neighbours in this list are a module's accents.
+   * The inks' Pantone colours as the chart shows them, two shades a hue, in order round the wheel:
+   * red (703, 2033), rose (2048, 689), purple (520, 668), violet (5275, 534), blue (647, 653),
+   * teal (5473, 562) and green (363, 364). No browns (the clay and olive of 2026-11-12) and, since
+   * 2026-11-20, no magenta (513, 254): the user's calls. Neighbours in this list are a module's
+   * accents.
    */
-  private val HUE_COLOURS = intArrayOf(0xE0303A, 0xF0609A, 0xD83FA8, 0xA040C0, 0x8A4BE0, 0x2F8FE0, 0x12A89A, 0x38B04A)
-  const val HUES = 8
+  private val PANTONE =
+    intArrayOf(
+      0xB73844, 0xCB4644, 0x993B60, 0x934266, 0x703572, 0x664975,
+      0x605677, 0x3A4972, 0x26547C, 0x335687, 0x26686D, 0x1E7A6D, 0x3D8E33, 0x3A7728,
+    )
+  const val HUES = 7
 
-  /** How many inks there are: each hue in a full shade and a softer one. */
+  /** How many inks there are: each hue in two shades. */
   const val INKS = HUES * 2
 
-  /** How much colour the softer shade keeps. */
-  private const val SOFT_CHROMA = 0.68f
-
-  /** How many of a district's modules take the softer shade: half, so each reads as a mosaic. */
+  /** How many of a district's modules take the second shade: half, so each reads as a mosaic. */
   private const val SOFT = 0.5f
 
   /** How many modules take a neighbouring hue: a few, like the odd leaf of another colour. */
   private const val ACCENTS = 0.1f
 
-  /** How much of the hour's own ink tints every hue, so the code still carries the hour and weather. */
-  private const val HOUR_SHARE = 0.2f
-
-  /** Kuala Lumpur's districts' hues: the gardens green, the mall magenta, the square purple, the twins teal, the supertall blue, the tower crimson. */
-  private val KL_HUES = intArrayOf(7, 2, 3, 6, 5, 0)
-
-  /** A paler tower is its district's colour this far toward [STONE]. */
-  const val PALE_BLOCK = 0.4f
-  private val STONE = floatArrayOf(0.92f, 0.90f, 0.86f)
+  /**
+   * Kuala Lumpur's districts' hues: the gardens green, the mall blue like the twins (it was magenta
+   * until 2026-11-20), the square red, the twins blue, the supertall violet, the tower teal. The
+   * rose and the purple, the hues nearest magenta, are only accents. A district of its own in
+   * either read as magenta again, and the mall in rose also scanned worse: a small code drawn at
+   * every tenth of a pixel from 7.5 to 9.5 a module misses only at 7.7 and 8.9 with this, as it
+   * did with magenta, and at 8.6 too with a rose mall.
+   */
+  private val KL_HUES = intArrayOf(6, 4, 0, 4, 3, 5)
 
   /** How many in a district's towers are paler. */
   private const val PALER = 0.4f
+
+  /** How many times the districts' reaches are evened out toward their shares; see [tones]. */
+  private const val BALANCE_ROUNDS = 60
 
   /** How ragged the districts' borders are: each module's distances shift by up to half this. */
   private const val RAGGED = 0.6f
@@ -84,9 +98,6 @@ object FlatColours {
    * the middle, and without it the corners' districts would be little more than their finders.
    */
   private const val CORNER_REACH = 1.4f
-
-  /** Tower colours a city can have: two for each of up to eight districts. */
-  const val MAX_TONES = 16
 
   /** The paper's four shades, as factors of the hour's paper. */
   val PAPER_SHADES = floatArrayOf(0.968f, 0.982f, 0.994f, 1.006f)
@@ -102,53 +113,38 @@ object FlatColours {
   const val SUPERTALL = 4
   const val TELECOM = 5
 
-  /** How many tower colours [recipe]'s districts give: each one's own and its paler one. */
-  fun tones(recipe: MaterialRecipe) = min(recipe.districts.size / 3, MAX_TONES / 2) * 2
+  /** How many tones [recipe]'s districts give: two each, a tower's own and its paler one. */
+  fun tones(recipe: MaterialRecipe) = recipe.districts * 2
 
-  /** The colour of a tower of tone [tone]: its district's, or (an odd tone) a paler one. */
-  fun block(recipe: MaterialRecipe, tone: Int): FloatArray {
-    val d = (tone / 2).coerceIn(0, recipe.districts.size / 3 - 1)
-    val c = FloatArray(3) { recipe.districts[d * 3 + it] }
-    if (tone % 2 == 1) for (k in 0..2) c[k] += (STONE[k] - c[k]) * PALE_BLOCK
-    return c
-  }
+  private val SOLVED = Array(INKS) { i -> solve(FloatArray(3) { k -> ((PANTONE[i] shr (16 - 8 * k)) and 0xFF) / 255f }) }
 
   /**
-   * Ink [index] under [air]: its hue (index / 2), a little of the hour in it, the softer shade for
-   * an odd index, solved onto the inks' two brightnesses.
+   * Ink [index]: its hue (index / 2) in its first or second Pantone shade, on the inks' two
+   * brightnesses. The same array every time; do not write to it.
    */
-  fun ink(index: Int, air: Atmosphere): FloatArray {
-    val hue = HUE_COLOURS[index / 2]
-    val c = FloatArray(3) { k ->
-      val own = ((hue shr (16 - 8 * k)) and 0xFF) / 255f
-      own + (air.ink[k] - own) * HOUR_SHARE
-    }
-    if (index % 2 == 1) {
-      val grey = lumaZxing(c)
-      for (k in 0..2) c[k] = grey + (c[k] - grey) * SOFT_CHROMA
-    }
-    return solve(c)
-  }
+  fun ink(index: Int): FloatArray = SOLVED[index]
 
   /**
    * [c] as close to itself as it can be with ZXing's luma exactly [INK_LUMA] and BT.601's within
-   * [INK_601_BAND] of [INK_601]: scaled to the first, then moved the least distance onto both.
+   * [INK_601_BAND] of [INK_601]: scaled to the first, then moved the least distance onto both, a
+   * few times over, since a channel that would pass 0 or 1 stops there.
    */
   private fun solve(c: FloatArray): FloatArray {
     val s = INK_LUMA / max(lumaZxing(c), 0.001f)
-    for (k in 0..2) c[k] *= s
-    val target601 = luma601(c).coerceIn(INK_601 - INK_601_BAND, INK_601 + INK_601_BAND)
+    for (k in 0..2) c[k] = (c[k] * s).coerceIn(0f, 1f)
     // The two brightnesses' weights, and the inverse of their Gram matrix.
     val a = arrayOf(floatArrayOf(0.25f, 0.5f, 0.25f), floatArrayOf(0.299f, 0.587f, 0.114f))
     val g00 = a[0].indices.sumOf { (a[0][it] * a[0][it]).toDouble() }.toFloat()
     val g01 = a[0].indices.sumOf { (a[0][it] * a[1][it]).toDouble() }.toFloat()
     val g11 = a[1].indices.sumOf { (a[1][it] * a[1][it]).toDouble() }.toFloat()
     val det = g00 * g11 - g01 * g01
-    val r0 = INK_LUMA - lumaZxing(c)
-    val r1 = target601 - luma601(c)
-    val l0 = (g11 * r0 - g01 * r1) / det
-    val l1 = (g00 * r1 - g01 * r0) / det
-    for (k in 0..2) c[k] = (c[k] + a[0][k] * l0 + a[1][k] * l1).coerceIn(0f, 1f)
+    repeat(24) {
+      val r0 = INK_LUMA - lumaZxing(c)
+      val r1 = luma601(c).coerceIn(INK_601 - INK_601_BAND * 0.9f, INK_601 + INK_601_BAND * 0.9f) - luma601(c)
+      val l0 = (g11 * r0 - g01 * r1) / det
+      val l1 = (g00 * r1 - g01 * r0) / det
+      for (k in 0..2) c[k] = (c[k] + a[0][k] * l0 + a[1][k] * l1).coerceIn(0f, 1f)
+    }
     return c
   }
 
@@ -165,8 +161,8 @@ object FlatColours {
 
   /**
    * Each module's ink, row by row: a dark module takes its district's hue ([tones] / 2, through
-   * [hue]) in its full or softer shade at random, or now and then a neighbouring hue; a finder is
-   * its district's full shade whole. Part of the city, so seeded and deterministic like the planner.
+   * [hue]) in either of its shades at random, or now and then a neighbouring hue; a finder is
+   * its district's first shade whole. Part of the city, so seeded and deterministic like the planner.
    */
   fun inks(matrix: QrMatrix, tones: IntArray, preset: CityPreset, districts: Int, seed: Int): IntArray {
     val n = matrix.size
@@ -213,34 +209,66 @@ object FlatColours {
         anchor(3.5f + (n - 7) * unit(seed, k * 3 + 1), 3.5f + (n - 7) * unit(seed, k * 3 + 2), (unit(seed, k * 3 + 3) * districts).toInt().coerceAtMost(districts - 1))
       }
     }
-    val out = IntArray(n * n)
-    for (row in 0 until n) for (col in 0 until n) {
-      val i = row * n + col
-      if (!matrix.isDark(col, row)) {
-        out[i] = (unit(seed + 17, i) * PAPER_SHADES.size).toInt()
-        continue
-      }
-      var x = col + 0.5f
-      var z = row + 0.5f
-      val finder = matrix.role(col, row) == QrRole.FINDER
-      if (finder) {
-        x = if (col < 7) 3.5f else far
-        z = if (row < 7) 3.5f else far
-      }
-      // The nearest anchor's district, each distance shifted a little for every module, so
-      // neighbouring districts interlock along their border.
+    // Where each dark module stands for the districts: a finder at its corner, so it is one
+    // district whole; and each anchor's distance to it shifted a little for every module, so
+    // neighbouring districts interlock along their border. Kuala Lumpur, whose districts are
+    // balanced (below), shifts every distance by the same amount, near or far: shifted in
+    // proportion, a border pushed far from its corner frayed into separate pieces.
+    val balanced = preset == CityPreset.KUALA_LUMPUR
+    val rough = RAGGED * (n / 4f) * (n / 4f)
+    val darks = (0 until n * n).filter { matrix.isDark(it % n, it / n) }
+    val spots = darks.map { i ->
+      val col = i % n
+      val row = i / n
+      if (matrix.role(col, row) == QrRole.FINDER) floatArrayOf(if (col < 7) 3.5f else far, if (row < 7) 3.5f else far, 1f)
+      else floatArrayOf(col + 0.5f, row + 0.5f, 0f)
+    }
+    val pull = FloatArray(anchors.size)
+    fun home(m: Int): Int {
+      val (x, z, finder) = spots[m]
       var home = 0
       var nearest = Float.MAX_VALUE
       for ((k, a) in anchors.withIndex()) {
-        val ragged = if (finder) 1f else 1f + RAGGED * (unit(seed + 41 + k, i) - 0.5f)
-        val d = ((x - a[0]) * (x - a[0]) + (z - a[1]) * (z - a[1])) * a[3] * ragged
+        val shift = if (finder > 0f) 0f else unit(seed + 41 + k, darks[m]) - 0.5f
+        val apart = ((x - a[0]) * (x - a[0]) + (z - a[1]) * (z - a[1])) * a[3]
+        val d = if (balanced) apart + rough * shift - pull[k] else apart * (1f + RAGGED * shift)
         if (d < nearest) {
           nearest = d
-          home = a[2].toInt()
+          home = k
         }
       }
-      val paler = !finder && unit(seed + 29, i) < PALER
-      out[i] = home * 2 + if (paler) 1 else 0
+      return home
+    }
+    // In Kuala Lumpur every hue the districts take gets the same share of the dark modules outside
+    // the finders (2026-11-20, at the user's request: "the amount of each colour are not
+    // balance"), split evenly between the districts that share it: each district's pull, taken off
+    // its distances, grows or shrinks a little at a time toward its share. Taken off, never
+    // multiplied in: a district grown by a factor reached round its neighbours into far corners of
+    // the code, while one grown by an offset stays one piece. The finders are left out because
+    // each corner is the same size whatever its colour, and in the city it is lawn or the mall,
+    // not towers of its colour. The mall and the twins share their blue, so each is half the size of the rest.
+    // Other cities keep their seeded districts as they were: evened out, one recipe's code no
+    // longer scanned on a stormy night at 42 px a module.
+    val hueOf = IntArray(anchors.size) { hue(anchors[it][2].toInt(), preset, tones(recipe) / 2) }
+    val hues = hueOf.distinct().size
+    val share = FloatArray(anchors.size) { k -> 1f / hues / hueOf.count { it == hueOf[k] } }
+    var step = 0.5f * n * n
+    if (balanced) repeat(BALANCE_ROUNDS) {
+      val counts = IntArray(anchors.size)
+      var towers = 0
+      for (m in darks.indices) {
+        if (spots[m][2] > 0f) continue
+        counts[home(m)]++
+        towers++
+      }
+      for (k in anchors.indices) pull[k] += (share[k] - counts[k].toFloat() / towers) * step
+      step *= 0.93f
+    }
+    val out = IntArray(n * n)
+    for (i in 0 until n * n) if (!matrix.isDark(i % n, i / n)) out[i] = (unit(seed + 17, i) * PAPER_SHADES.size).toInt()
+    for ((m, i) in darks.withIndex()) {
+      val paler = spots[m][2] == 0f && unit(seed + 29, i) < PALER
+      out[i] = anchors[home(m)][2].toInt() * 2 + if (paler) 1 else 0
     }
     return out
   }
@@ -250,7 +278,7 @@ object FlatColours {
     val n = city.modules
     if (col !in 0 until n || row !in 0 until n) return paper(air)
     val i = row * n + col
-    return if (city.qr.isDark(col, row)) ink(city.inks[i], air) else paper(city.tones[i], air)
+    return if (city.qr.isDark(col, row)) ink(city.inks[i]) else paper(city.tones[i], air)
   }
 
   /** The flat code at the point ([x], [y]) in modules from its top left: square modules, as drawn. */

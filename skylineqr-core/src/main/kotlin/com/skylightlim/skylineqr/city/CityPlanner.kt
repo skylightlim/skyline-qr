@@ -36,6 +36,10 @@ class City(
    * height, facing +z. On the mall tower in Kuala Lumpur; null in a city without one.
    */
   val screen: FloatArray? = null,
+  /** Where the fountain's water leaves the top of its stem (x, y, z), in Kuala Lumpur; null without one. */
+  val fountain: FloatArray? = null,
+  /** The middle of Kuala Lumpur's crossing (x, z); null in a city without one. */
+  val crossing: FloatArray? = null,
 ) {
   /** Half-width of the floating plate, quiet zone included. */
   val plateHalf: Float
@@ -96,6 +100,12 @@ object CityPlanner {
    */
   const val ROLE_WEATHER = 12f
 
+  /**
+   * A firework's spark, or the mall fountain's water, added every frame (2026-11-09): it glows on
+   * its own, its colour by its random slot and its brightness by its glow. It casts no shadow.
+   */
+  const val ROLE_SPARK = 13f
+
   fun plan(matrix: QrMatrix, identity: CityIdentity, preset: CityPreset = CityPreset.GENERIC): City {
     // Version 1 is the only recipe so far; a new one branches here instead of editing this one.
     GeneratorVersion.resolve(identity.generatorVersion)
@@ -121,6 +131,19 @@ object CityPlanner {
       }
     }
 
+    // Kuala Lumpur's crossing on the alignment pattern (2026-11-09): its middle and arms paved as
+    // road, low shops round it, and the restaurant on its far corner.
+    val aligned = if (kl) Corners.alignment(matrix) else -1
+    val paved = if (aligned >= 0) Corners.paved(aligned, n) else emptySet()
+    if (aligned >= 0) {
+      val ac = aligned % n
+      val ar = aligned / n
+      for (z in ar - 2..ar + 2) for (x in ac - 2..ac + 2) {
+        if (matrix.isDark(x, z)) heights[z * n + x] = if (z * n + x in paved) Corners.PAVED else Corners.ringHeight(x, z, seed)
+      }
+      heights[Corners.restaurant(aligned, n)] = Corners.RESTAURANT
+    }
+
     // The generic city makes its own centrepiece; Kuala Lumpur already has three.
     if (!kl) boostLandmark(heights, matrix)
     var maxH = FLOOR
@@ -131,9 +154,11 @@ object CityPlanner {
     val skyline = if (landmarks != null) max(maxH, KualaLumpur.supertallHeight(n)) else maxH
     // Traffic before the towers: Kuala Lumpur's crossing is a junction with lights, and the
     // restaurant on its corner stands two floors high, whatever tower its module would have had.
-    val traffic = Traffic.plan(matrix, heights, n, seed, skyline, maxH, landmarks, data)
+    val traffic = Traffic.plan(matrix, heights, n, seed, skyline, maxH, landmarks, data, paved, aligned)
     val rail = traffic.movers.firstOrNull { it.kind == Mover.MONORAIL }?.route
-    val restaurant = if (kl) Corners.restaurant(traffic.signals, matrix, landmarks, rail) else -1
+    // A version 1 code has no alignment pattern: there the crossing keeps to the lit junction
+    // nearest the mall, the restaurant on its corner.
+    val restaurant = if (kl && aligned < 0) Corners.restaurant(traffic.signals, matrix, landmarks, rail) else -1
     if (restaurant >= 0) heights[restaurant] = Corners.RESTAURANT
 
     // The plate: ground for the whole city plus the QR quiet zone.
@@ -168,13 +193,25 @@ object CityPlanner {
       }
     }
 
+    var crossing: FloatArray? = null
     if (landmarks != null) {
       KualaLumpur.build(data, landmarks, n)
-      Corners.crossing(data, traffic.signals, matrix, landmarks, restaurant, rail)
+      if (aligned >= 0) {
+        Corners.alignmentCrossing(data, aligned, n)
+        crossing = floatArrayOf(aligned % n + 0.5f - half, aligned / n + 0.5f - half)
+      } else {
+        Corners.crossing(data, traffic.signals, matrix, landmarks, restaurant, rail)
+        val j = Corners.crossing(traffic.signals, n, rail, landmarks)
+        if (j >= 0) crossing = floatArrayOf(traffic.signals.cells[j * 2] + 0.5f - half, traffic.signals.cells[j * 2 + 1] + 0.5f - half)
+      }
     }
 
     val screen = if (kl) Corners.screen(n) else null
-    return City(data.toArray(), data.count, n, skyline, identity, traffic.movers, matrix, materials, preset, landmarks, tones, inks, traffic.signals, screen)
+    val fountain = if (kl) Corners.fountain(n) else null
+    return City(
+      data.toArray(), data.count, n, skyline, identity, traffic.movers, matrix, materials, preset, landmarks, tones, inks, traffic.signals,
+      screen, fountain, crossing,
+    )
   }
 
   /**

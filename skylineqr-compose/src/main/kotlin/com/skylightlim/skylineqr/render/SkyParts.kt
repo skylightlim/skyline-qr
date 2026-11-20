@@ -5,7 +5,6 @@ import com.skylightlim.skylineqr.city.City
 import com.skylightlim.skylineqr.city.CityPlanner
 import com.skylightlim.skylineqr.city.SunAndMoon
 import com.skylightlim.skylineqr.city.Vehicles
-import com.skylightlim.skylineqr.compose.SkyPart
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -25,9 +24,10 @@ import kotlin.math.sin
  *
  * Clouds never shrink or fade away. When the weather changes, or the clouds are turned off, they
  * blow on downwind (+x) out of sight, and ones that come blow in from upwind (see [Amounts]).
- * Every cloud is its own shape, from its city's seed and its place: a cumulus heaped highest in
- * the middle, a long low row of lumps, a small puff, a tower of heaps or a ragged pair (see
- * [fairShape]); a storm's are dark and heavy underneath, some with a tower or an anvil on top.
+ * Every cloud is its own shape, from its city's seed and its place: a heap of soft balls along a
+ * level base, billowing up in the middle (see [fairShape]), which the cloud shader draws soft-edged
+ * and blended (2026-11-12); a storm's are larger, dark and heavy underneath, some with a tower on
+ * top.
  *
  * Pure Kotlin, so a JVM test can write exactly the boxes the renderer draws.
  */
@@ -101,8 +101,10 @@ internal object SkyParts {
         round(box, at, SUN * amounts.shine * sunUp, SUN_GLOW, high)
       }
       // The moon, its whole disc whenever it is up and any of it is lit (its glow says how much);
-      // only at new moon, lost in the sun, is it gone.
-      val moonUp = horizon(air.moon.altitude) * smooth((air.moonLit - 0.02f) / 0.03f)
+      // only at new moon, lost in the sun, is it gone. Never with the sun (2026-11-12, at the
+      // user's request: the real sky often has both, and it read as a mistake): it comes out as
+      // the sun goes down.
+      val moonUp = horizon(air.moon.altitude) * smooth((air.moonLit - 0.02f) / 0.03f) * (1f - sunUp)
       if (moonUp > 0f) {
         disc(air.moon, city, at)
         round(box, at, MOON * amounts.shine * moonUp, MOON_GLOW, air.moonLit)
@@ -212,47 +214,6 @@ internal object SkyParts {
   }
 
   /**
-   * What a ray from [eye] along [dir] meets first among the weather's boxes in [boxes] ([count] of
-   * them, laid out as the traffic buffer holds them): a cloud, the sun, the moon, or nothing. Each
-   * box counts a little larger than it is drawn, so a fingertip finds a small cloud.
-   */
-  fun pick(boxes: FloatArray, count: Int, eye: FloatArray, dir: FloatArray): SkyPart? {
-    var nearest = Float.MAX_VALUE
-    var found: SkyPart? = null
-    for (i in 0 until count) {
-      val o = i * CityPlanner.STRIDE
-      if (boxes[o + 6] != CityPlanner.ROLE_WEATHER) continue
-      // Into the box's own frame: from its middle, turned back by its yaw.
-      val c = cos(boxes[o + 10])
-      val s = sin(boxes[o + 10])
-      val px = eye[0] - boxes[o]
-      val py = eye[1] - boxes[o + 1]
-      val pz = eye[2] - boxes[o + 2]
-      val origin = floatArrayOf(px * c + pz * s, py, -px * s + pz * c)
-      val along = floatArrayOf(dir[0] * c + dir[2] * s, dir[1], -dir[0] * s + dir[2] * c)
-      var near = 0f
-      var far = Float.MAX_VALUE
-      var missed = false
-      for (axis in 0..2) {
-        val half = boxes[o + 3 + axis] * 0.5f * PICK_SLACK
-        if (abs(along[axis]) < 1e-6f) {
-          if (abs(origin[axis]) > half) missed = true
-          continue
-        }
-        val a = (-half - origin[axis]) / along[axis]
-        val b = (half - origin[axis]) / along[axis]
-        near = max(near, min(a, b))
-        far = min(far, max(a, b))
-      }
-      if (missed || near > far || near >= nearest) continue
-      nearest = near
-      val glow = boxes[o + 7]
-      found = if (glow > 0.9f) SkyPart.SUN else if (glow > 0.5f) SkyPart.MOON else SkyPart.CLOUD
-    }
-    return found
-  }
-
-  /**
    * Clear-sky cloud [k]'s middle and size into [out]: spread evenly round the sky, each in its own
    * slot along the wind and the next one a golden-ratio step across it, so no two bunch together
    * as the wind carries them round.
@@ -283,80 +244,41 @@ internal object SkyParts {
 
   /**
    * One clear-sky cloud, [at] its middle and size (x, y, z, size), grey [grey], its shape from
-   * [seed]. Every one is a flat-bottomed cluster of heaps standing side by side, never stacked (a
-   * stack read as a stepped pyramid), tallest near the middle and lower toward the ends, but each
-   * kind clusters differently: a cumulus of three to six heaps, some in front and some behind; a
-   * long low row of lumps; a small puff; a big cumulus with one broad heap rising out of it; or a
-   * ragged pair drifting together. Heaps narrow a touch at the top, so they read rounded, and each
-   * turns its own small way.
+   * [seed] (2026-11-12, second revision, at the user's request: like a real cloud; faceted boxes
+   * never read as one). A cloud is a heap of soft balls the cloud shader draws (Wgsl.cloudFragment),
+   * each a box here that holds one: a row of them along a level base, overlapping, the biggest
+   * near the middle; a shorter row heaped on top, set back; and a crown or two over that, so it
+   * billows up in the middle like a fair-weather cumulus. How many, how long and how tall all
+   * come from the seed.
    */
   private fun fairShape(box: Vehicles.Sink, at: FloatArray, grey: Float, seed: Int) {
     val cloud = Cloud(box, at, grey, seed, glow = 0f)
-    val kind = unit(seed * 7 + 1)
-    when {
-      kind < 0.36f -> {
-        val length = 1.8f + 0.7f * unit(seed * 7 + 2)
-        val heaps = 3 + (unit(seed * 7 + 3) * 4f).toInt()
-        cloud.part(0f, BOTTOM + 0.08f, 0f, length * 0.92f, 0.16f, 0.85f, 0.92f)
-        cloud.heaps(heaps, length, 0.66f, tallest = 0.5f + 0.3f * unit(seed * 7 + 4), depth = 0.62f, spread = 0.36f)
-      }
-      kind < 0.6f -> {
-        val length = 2.8f + 1.0f * unit(seed * 7 + 2)
-        cloud.part(0f, 0.1f, 0f, length, 0.2f, 0.95f, 0.94f)
-        cloud.heaps(4 + (unit(seed * 7 + 3) * 3f).toInt(), length * 0.9f, 0.5f, tallest = 0.3f + 0.14f * unit(seed * 7 + 4), depth = 0.55f, spread = 0.3f)
-      }
-      kind < 0.78f -> {
-        cloud.heaps(2 + (unit(seed * 7 + 3) * 2f).toInt(), 0.9f + 0.4f * unit(seed * 7 + 2), 0.55f, tallest = 0.42f + 0.16f * unit(seed * 7 + 4), depth = 0.6f, spread = 0.25f)
-      }
-      kind < 0.92f -> {
-        val length = 2.3f + 0.6f * unit(seed * 7 + 2)
-        cloud.part(0f, BOTTOM + 0.08f, 0f, length * 0.92f, 0.16f, 0.9f, 0.92f)
-        cloud.heaps(5, length, 0.62f, tallest = 0.42f, depth = 0.62f, spread = 0.4f)
-        // The broad heap rising out of its middle, as wide as it is tall.
-        val tall = 0.75f + 0.25f * unit(seed * 7 + 5)
-        cloud.part((unit(seed * 7 + 6) - 0.5f) * 0.3f, BOTTOM + tall / 2f, 0f, 0.95f, tall, 0.8f, 1.04f, 0.9f, 20)
-      }
-      else -> {
-        // Two small clusters that have drifted apart, joined by a thin wisp.
-        cloud.heaps(2, 0.7f, 0.45f, tallest = 0.42f, depth = 0.55f, spread = 0.2f, from = -0.62f)
-        cloud.heaps(2, 0.6f, 0.4f, tallest = 0.34f, depth = 0.5f, spread = 0.2f, from = 0.62f)
-        cloud.part(0f, BOTTOM + 0.07f, 0.06f, 1.4f, 0.14f, 0.4f, 0.93f, 1f, 21)
-      }
+    val puffs = 4 + (unit(seed * 7 + 3) * 4f).toInt()
+    val big = 0.5f + 0.18f * unit(seed * 7 + 4)
+    cloud.row(puffs, puffs * big * 0.95f, big, BOTTOM, 0.3f, squash = 0.62f, shade = 0.97f)
+    cloud.row(puffs - 2, (puffs - 2) * big * 0.8f, big * 0.82f, BOTTOM + big * 0.45f, 0.22f, squash = 0.8f, shade = 1f)
+    val crowns = 1 + (unit(seed * 7 + 1) * 2f).toInt()
+    for (k in 0 until crowns) {
+      cloud.puff((unit(seed * 7 + 20 + k) - 0.5f) * big * 1.6f, BOTTOM + big * (1.25f + 0.2f * unit(seed * 7 + 30 + k)), (unit(seed * 7 + 40 + k) - 0.5f) * 0.3f, big * 0.62f, 0.85f, 1f)
     }
   }
 
   /**
-   * One cloud of a storm's deck: a wide, dark, flat underside, a heavy body of heaps on it, lighter
-   * where they rise, and on some a tower climbing out of it or an anvil spread flat across the top.
+   * One cloud of a storm's deck: the same balls, larger, flatter and closer together, dark at the
+   * base and lighter where they rise, and on some a tower of them climbing out of the top.
    */
   private fun stormShape(box: Vehicles.Sink, at: FloatArray, grey: Float, seed: Int, glow: Float) {
     val cloud = Cloud(box, at, grey, seed, glow)
-    val length = 2.2f + 0.7f * unit(seed * 7 + 2)
-    cloud.part(0f, 0f, 0f, length, 0.42f, 1.2f, 0.8f)
-    val heaps = 3 + (unit(seed * 7 + 3) * 3f).toInt()
-    var peak = 0f
-    var peakX = 0f
-    for (i in 0 until heaps) {
-      val x = (-0.5f + (i + 0.5f) / heaps) * length * 0.85f + (unit(seed * 61 + i) - 0.5f) * 0.12f
-      val tall = 0.45f + 0.5f * unit(seed * 67 + i)
-      cloud.part(x, 0.18f + tall / 2f, (unit(seed * 71 + i) - 0.5f) * 0.3f, 0.65f + 0.35f * unit(seed * 73 + i), tall, 0.8f + 0.3f * unit(seed * 79 + i), 1f, 0.86f, i)
-      if (tall > peak) {
-        peak = tall
-        peakX = x
-      }
-    }
-    val crown = unit(seed * 7 + 4)
-    if (crown < 0.28f) {
-      cloud.part(peakX * 0.5f, 0.18f + peak + 0.1f, 0f, length * 1.05f, 0.2f, 1.25f, 1.12f, 1f, 8)
-    } else if (crown < 0.6f) {
-      cloud.part(peakX, 0.18f + peak + 0.32f, 0.04f, 0.62f, 0.75f, 0.62f, 1.08f, 0.78f, 8)
-    }
+    val puffs = 5 + (unit(seed * 7 + 3) * 3f).toInt()
+    val big = 0.66f + 0.16f * unit(seed * 7 + 2)
+    cloud.row(puffs, puffs * big * 0.8f, big, 0f, 0.4f, squash = 0.55f, shade = 0.8f)
+    cloud.row(puffs - 1, (puffs - 1) * big * 0.7f, big * 0.85f, big * 0.4f, 0.3f, squash = 0.7f, shade = 1f)
+    if (unit(seed * 7 + 4) < 0.45f) cloud.puff((unit(seed * 7 + 5) - 0.5f) * 0.6f, big * 1.3f, 0f, big * 0.7f, 0.9f, 1.06f)
   }
 
   /**
-   * A cloud being put together: parts placed about its middle in its size, turned with it by its
-   * own small yaw, each with a shade of its grey (darker underneath, lighter on top), a top that
-   * narrows to [taper], and a twist of its own seeded by [twist].
+   * A cloud being put together: puffs placed about its middle in its size, turned with it by its
+   * own small yaw, each in a shade of its grey.
    */
   private class Cloud(private val box: Vehicles.Sink, private val at: FloatArray, private val grey: Float, private val seed: Int, private val glow: Float) {
     private val turn = (unit(seed * 7 + 11) - 0.5f) * 0.9f
@@ -365,30 +287,29 @@ internal object SkyParts {
     private var placed = 0
 
     /**
-     * [count] heaps side by side along [length] about [from], their bottoms all near the cloud's
-     * flat base: each [wide] or so, the tallest [tallest] near the middle and the ends lower, some
-     * a little in front and some behind by up to [spread], [depth] or so deep.
+     * [count] puffs side by side along [length], their undersides at [bottom]: the biggest, of
+     * radius [radius], near the middle and the ends smaller, each up to [spread] in front or
+     * behind, [squash] times as tall as wide.
      */
-    fun heaps(count: Int, length: Float, wide: Float, tallest: Float, depth: Float, spread: Float, from: Float = 0f) {
+    fun row(count: Int, length: Float, radius: Float, bottom: Float, spread: Float, squash: Float, shade: Float) {
       for (i in 0 until count) {
-        val k = placed++
+        val k = placed
         val t = if (count == 1) 0f else i / (count - 1f) * 2f - 1f
-        val x = from + t * (length - wide) / 2f + (unit(seed * 13 + k) - 0.5f) * wide * 0.3f
-        val tall = tallest * (1f - 0.35f * t * t) * (0.8f + 0.4f * unit(seed * 17 + k))
-        val heapWide = wide * (0.8f + 0.45f * unit(seed * 19 + k))
-        val heapDeep = depth * (0.8f + 0.5f * unit(seed * 29 + k))
-        val bottom = BOTTOM + (unit(seed * 31 + k) - 0.5f) * 0.06f
-        part(x, bottom + tall / 2f, (unit(seed * 23 + k) - 0.5f) * 2f * spread, heapWide, tall, heapDeep, 0.96f + 0.08f * tall, 0.9f, k)
+        val r = radius * (1f - 0.4f * t * t) * (0.85f + 0.3f * unit(seed * 17 + k))
+        val x = t * (length - 2f * radius).coerceAtLeast(0f) / 2f + (unit(seed * 13 + k) - 0.5f) * radius * 0.4f
+        puff(x, bottom + r * squash, (unit(seed * 23 + k) - 0.5f) * 2f * spread, r, squash, shade)
       }
     }
 
-    fun part(dx: Float, dy: Float, dz: Float, sx: Float, sy: Float, sz: Float, shade: Float, taper: Float = 1f, twist: Int = -1) {
+    /** One puff about ([dx], [dy], [dz]): a ball [r] across its middle and [squash] times that up and down. */
+    fun puff(dx: Float, dy: Float, dz: Float, r: Float, squash: Float, shade: Float) {
+      placed++
       val size = at[3]
-      val yaw = turn + if (twist < 0) 0f else (unit(seed * 89 + twist) - 0.5f) * 0.4f
+      // The glow says what it is to the shaders: under a half, a cloud; a bolt lights it up to that.
       box.box(
         at[0] + (dx * c - dz * s) * size, at[1] + dy * size, at[2] + (dx * s + dz * c) * size,
-        sx * size, sy * size, sz * size,
-        CityPlanner.ROLE_WEATHER, glow, (grey * shade).coerceIn(0f, 1f), yaw, taper,
+        2f * r * size, 2f * r * squash * size, 2f * r * size,
+        CityPlanner.ROLE_WEATHER, glow.coerceAtMost(0.5f), (grey * shade).coerceIn(0f, 1f), 0f, 1f,
       )
     }
   }
@@ -442,9 +363,6 @@ internal object SkyParts {
 
   /** Where a clear-sky cloud's flat base is, in its sizes below its middle. */
   private const val BOTTOM = -0.2f
-
-  /** How much larger than drawn a box counts for a long press. */
-  private const val PICK_SLACK = 1.3f
 
   /** The sun's and the moon's radius, and the glow that tells the shader which is which. */
   private const val SUN = 2.6f

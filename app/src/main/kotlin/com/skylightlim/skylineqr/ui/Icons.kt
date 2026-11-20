@@ -33,8 +33,6 @@ internal object SkylineIcons {
   /** Lucide's cloud: the clouds' setting. */
   val Cloud = icon("Cloud", "M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z")
 
-  val Share = icon("Share", "M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8", "M16 6L12 2L8 6", "M12 2V15")
-
   val More = icon("More", "m6 9 6 6 6-6")
 
   /** Lucide's check: the chosen item in a menu. */
@@ -69,6 +67,36 @@ internal object SkylineIcons {
 
   /** Lucide's triangle-alert: something wrong. */
   val Warning = icon("Warning", "m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3", "M12 9v4", "M12 17h.01")
+
+  // The settings card (2026-11-09).
+
+  /** Lucide's plane: the tour, which ends with the plane and its flag. */
+  val Tour =
+    icon(
+      "Tour",
+      "M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z",
+    )
+
+  /** Lucide's sunset: the timelapse, which runs the city from day into night. */
+  val Timelapse =
+    icon(
+      "Timelapse", "M12 10V2", "m4.93 10.93 1.41 1.41", "M2 18h2", "M20 18h2", "m19.07 10.93-1.41 1.41", "M22 22H2",
+      "m16 6-4 4-4-4", "M16 18a4 4 0 0 0-8 0",
+    )
+
+  /** Lucide's monitor: the sign board. */
+  val Board = icon("Board", rect(2f, 3f, 20f, 14f, 2f), "M8 21h8", "M12 17v4")
+
+  /** Lucide's scroll-text: the licences. */
+  val Licences =
+    icon(
+      "Licences", "M15 12h-5", "M15 8h-5", "M19 17V5a2 2 0 0 0-2-2H4",
+      "M8 21h12a2 2 0 0 0 2-2v-1a1 1 0 0 0-1-1H11a1 1 0 0 0-1 1v1a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v2a1 1 0 0 0 1 1h3",
+    )
+
+  /** Lucide's chevron-right and arrow-left: into a page of the card, and back out. */
+  val Forward = icon("Forward", "m9 18 6-6-6-6")
+  val Back = icon("Back", "m12 19-7-7 7-7", "M19 12H5")
 
   /** Lucide's rotate-ccw: the camera going back to where it was. */
   val Reset = icon("Reset", "M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8", "M3 3v5h5")

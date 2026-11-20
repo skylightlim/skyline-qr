@@ -12,16 +12,17 @@ WebGPU cannot start, a flat 2D code takes its place, so the link always scans.
 
 ## Get it
 
-- **The app**: the signed APK is on the [releases page](https://github.com/skylightlim/skyline-qr/releases/latest)
-  (Android 8.0+, a phone with Vulkan).
-- **The library**, through [JitPack](https://jitpack.io/#skylightlim/skyline-qr):
+The demo app's APK is on the [Releases](https://github.com/skylightlim/skyline-qr/releases) page.
+The library comes through [JitPack](https://jitpack.io/#skylightlim/skyline-qr):
 
-  ```kotlin
-  // settings.gradle.kts
-  dependencyResolutionManagement { repositories { maven("https://jitpack.io") } }
-  // build.gradle.kts
-  implementation("com.github.skylightlim.skyline-qr:skylineqr-compose:v1.0.0")
-  ```
+```kotlin
+// settings.gradle.kts
+dependencyResolutionManagement { repositories { maven("https://jitpack.io") } }
+// build.gradle.kts
+implementation("com.github.skylightlim.skyline-qr:skylineqr-compose:v1.0.0")
+```
+
+The app needs Android 8.0+ and a phone with Vulkan.
 
 ## Modules
 
@@ -39,20 +40,24 @@ SkylineQrCode(
   city = CityPreset.KUALA_LUMPUR,  // the default: three landmarks and the monorail; or GENERIC
   time = TimeOfDay.AUTO,      // follows the phone's clock; or DAWN, DAY, DUSK, NIGHT
   weather = Weather.CLEAR,    // or RAIN, HAZE, STORM
+  longPress = LongPress.METEOR,  // or FIREWORKS
 )
 ```
 
 Tap to fold the city into its code and back. In the city, drag to turn it, pinch to zoom, and
-long-press to bring a meteor down (it rebuilds itself); `state.resetCamera()` puts the camera back. Time
-and weather only light the city; they never change it. `onEvent` reports lightning and meteors, so
-an app can add sound of its own; the demo is silent.
+long-press to bring a meteor down (it rebuilds itself) or to let off fireworks;
+`state.resetCamera()` puts the camera back, `state.startTour()` flies it past every landmark
+and folds the city into its code, the same every time, and `state.startTimelapse()` runs the city
+from midday to night in fifteen seconds. Time and weather only light the city; they
+never change it. `onEvent` reports lightning and meteors, so an app can add sound of its own; the
+demo is silent.
 
-Share links (`https://skylightlim.github.io/city/?c=…`) open the exact city in the app, or a page
-with its plain QR code where the app is not installed.
+The demo app adds a settings card (the tour and the timelapse, what a long press does, the clouds,
+the sign board's messages, the licences) and tap to share over NFC. It has no share links (removed 2026-11-09).
 
 The same link always builds the same city. By default every page on one site shares a city while
 each QR still points at its own page; pass `identityScope = IdentityScope.URL` to give every page
-its own. A city you save or share should record `GeneratorVersion.CURRENT` and pass it back as
+its own. A city you save should record `GeneratorVersion.CURRENT` and pass it back as
 `generatorVersion`, so it never changes when the generator improves.
 
 ## Building
@@ -63,7 +68,7 @@ its own. A city you save or share should record `GeneratorVersion.CURRENT` and p
 ```
 
 The device tests render real WebGPU frames, read them back and scan them with ZXing. Needs JDK 17+
-and the Android SDK (compileSdk 36). minSdk is 26.
+and the Android SDK (compileSdk 37 for the app, 36 for the libraries). minSdk is 26.
 
 ## Credits
 

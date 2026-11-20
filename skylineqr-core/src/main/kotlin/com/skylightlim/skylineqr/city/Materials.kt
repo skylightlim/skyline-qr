@@ -11,11 +11,8 @@ class MaterialRecipe(
   val vehicle: FloatArray,
   /** Thirty-two landmark colours as rgb triples, for a preset that has landmarks. */
   val landmarks: FloatArray = FloatArray(96),
-  /**
-   * The districts' colours as rgb triples, at most eight: each district's towers are built of its
-   * colour, and its modules in the flat code inked in it (see [FlatColours]).
-   */
-  val districts: FloatArray = families,
+  /** How many districts the city has, at most eight: each takes a hue of its own (see [FlatColours]). */
+  val districts: Int = 4,
 )
 
 /**

@@ -84,7 +84,7 @@ internal object Camera {
     val distance = fit * (1.18f + (FLAT_DISTANCE - 1.18f) * eased) / zoom
     val targetY = (city?.maxHeight ?: 4f) * 0.40f * (1f - eased)
     // Lift the composition clear of the controls underneath it.
-    val shiftY = 0.22f - 0.12f * eased
+    val shiftY = CITY_SHIFT - 0.12f * eased
     val eye =
       floatArrayOf(
         distance * cos(elevation) * sin(yaw),
@@ -97,6 +97,26 @@ internal object Camera {
     val look = Mat4.lookAt(eye[0], eye[1], eye[2], 0f, targetY, 0f, 0f, 1f, 0f)
     val proj = Mat4.perspective(fov, aspect, distance * 0.25f, distance * 3.5f, shiftY)
     return Pose(eye, fwd, right, up, tanHalf, aspect, shiftY, Mat4.multiply(proj, look))
+  }
+
+  /** Where the city's own camera looks: over the middle of the plate, two fifths of the skyline up. */
+  fun target(city: City?) = floatArrayOf(0f, (city?.maxHeight ?: 4f) * 0.40f, 0f)
+
+  /** The camera's lens shift in the city, which lifts it clear of the controls underneath. */
+  const val CITY_SHIFT = 0.22f
+
+  /**
+   * A camera at [eye] looking at [target], for the tour (2026-11-09): the city's own field of view,
+   * lens shift [shiftY] and a depth range wide enough for anything round the plate.
+   */
+  fun look(eye: FloatArray, target: FloatArray, aspect: Float, shiftY: Float): Pose {
+    val fwd = normalize(floatArrayOf(target[0] - eye[0], target[1] - eye[1], target[2] - eye[2]))
+    val right = normalize(cross(fwd, UP))
+    val up = cross(right, fwd)
+    val tanHalf = tan(Math.toRadians(BASE_FOV / 2.0)).toFloat()
+    val look = Mat4.lookAt(eye[0], eye[1], eye[2], target[0], target[1], target[2], 0f, 1f, 0f)
+    val proj = Mat4.perspective(BASE_FOV, aspect, 0.4f, 260f, shiftY)
+    return Pose(eye.copyOf(), fwd, right, up, tanHalf, aspect, shiftY, Mat4.multiply(proj, look))
   }
 
   /**

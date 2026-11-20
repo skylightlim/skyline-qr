@@ -16,3 +16,6 @@ local.properties
 .kotlin
 thingstodo.md
 graphify-out/
+# Local working notes and an unadopted tour revision with its 21 MB render; not published.
+audit.md
+tools/tour/

@@ -7,7 +7,6 @@ import com.google.zxing.qrcode.QRCodeReader
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
-import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -66,11 +65,6 @@ class PaymentCodeTest {
     val matrix = QrEncoder.encode(code)
     assertTrue("version ${matrix.symbolVersion}", matrix.symbolVersion <= QrEncoder.MAX_SYMBOL_VERSION)
     assertEquals(code, scan(matrix))
-  }
-
-  @Test
-  fun aPaymentCodesCityHasNoShareLink() {
-    assertThrows(IllegalArgumentException::class.java) { ShareLink.encode(SharedCity(code())) }
   }
 
   /** What ZXing reads off [matrix] drawn in black on white, 8 pixels a module, with a quiet zone. */

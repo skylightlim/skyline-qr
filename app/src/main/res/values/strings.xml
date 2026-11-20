@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">Skyline QR</string>
+    <string name="tour_short">Tour</string>
+    <string name="tour_long">Take the tour</string>
 </resources>

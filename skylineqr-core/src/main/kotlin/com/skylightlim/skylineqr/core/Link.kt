@@ -27,7 +27,7 @@ class Link private constructor(
   val hasSensitiveQuery: Boolean,
   /**
    * It is a payment code, not a web link (see [PaymentCode]): its payload is the code exactly as
-   * given, its identity the whole code, and it is never put in a share link.
+   * given, and its identity the whole code.
    */
   val isPaymentCode: Boolean = false,
 ) {

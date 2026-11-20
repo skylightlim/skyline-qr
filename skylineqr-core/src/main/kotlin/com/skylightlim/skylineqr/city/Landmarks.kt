@@ -35,6 +35,14 @@ class LandmarkPlan(
 
   fun covers(col: Int, row: Int) = all.any { it.covers(col, row) }
 
+  /** How tall the landmark on [f], one of [all], stands in a code [modules] wide, at its true ratio. */
+  fun height(f: Footprint, modules: Int): Float =
+    when (f) {
+      supertall -> KualaLumpur.supertallHeight(modules)
+      telecom -> KualaLumpur.telecomHeight(modules)
+      else -> KualaLumpur.twinHeight(modules)
+    }
+
   companion object {
     /** Corner zones, a module wider than the finder patterns and their separators. */
     const val CORNER = 9
@@ -161,7 +169,9 @@ class LandmarkPlan(
       for (row in f.z until f.z + f.size) {
         for (col in f.x until f.x + f.size) {
           if (!matrix.isDark(col, row) || inCorner(col, row, n)) return false
-          if (matrix.role(col, row) == QrRole.FINDER || matrix.role(col, row) == QrRole.SEPARATOR) return false
+          // Nor on the alignment pattern, which is the crossing's (2026-11-09).
+          val role = matrix.role(col, row)
+          if (role == QrRole.FINDER || role == QrRole.SEPARATOR || role == QrRole.ALIGNMENT) return false
         }
       }
       return true

@@ -82,15 +82,6 @@ object Atmospheres {
   fun backdrop(air: Atmosphere): FloatArray =
     FloatArray(3) { (air.skyHorizon[it] + (air.skyTop[it] - air.skyHorizon[it]) * 0.35f) * 0.92f }
 
-  /**
-   * Around the flat code: a deeper colour of the same sky, so the code's pale plate stands out and the
-   * whole screen still carries the hour. The renderer's sky shader uses the same blend.
-   */
-  fun surround(air: Atmosphere): FloatArray {
-    val behind = backdrop(air)
-    return FloatArray(3) { air.skyTop[it] + (behind[it] - air.skyTop[it]) * 0.35f }
-  }
-
   /** The phone's local clock as a minute of the day, with its fraction. */
   fun clockMinute(nowMillis: Long = System.currentTimeMillis(), zone: TimeZone = TimeZone.getDefault()): Float {
     val local = nowMillis + zone.getOffset(nowMillis)
@@ -207,7 +198,7 @@ object Atmospheres {
       wet = wet,
       storm = storm,
       sun = if (now != null) SunAndMoon.sun(now) else clockSun,
-      moon = if (now != null) SunAndMoon.moon(now) else if (clockSun.altitude < DARK) NIGHT_MOON else SET_MOON,
+      moon = if (now != null) SunAndMoon.moon(now) else clockMoon(clockSun.altitude),
       moonLit = if (now != null) SunAndMoon.lit(now) else NIGHT_MOON_LIT,
     )
   }
@@ -218,12 +209,21 @@ object Atmospheres {
     return SunAndMoon.Place(lerp(a.altitude, b.altitude, t), a.azimuth + turn * t)
   }
 
-  /** How far below the horizon the sun is when a fixed hour's moon comes out: six degrees, civil dusk. */
+  /** How far below the horizon the sun is when a fixed hour's moon begins to rise: six degrees, civil dusk. */
   private const val DARK = -0.105f
-  /** The fixed hours' moon: high in the east-south-east after dark, nearly full; set in the west by day. */
+  /** How much further the sun sinks while that moon climbs to its place: about eleven degrees, an hour of the clock. */
+  private const val MOONRISE = 0.2f
+  /** The fixed hours' moon: high in the east-south-east after dark, nearly full; below the horizon by day. */
   private val NIGHT_MOON = SunAndMoon.Place(0.87f, 2.0f)
-  private val SET_MOON = SunAndMoon.Place(-0.35f, 4.5f)
+  private const val SET_MOON = -0.12f
   private const val NIGHT_MOON_LIT = 0.92f
+
+  /**
+   * The fixed hours' moon with the sun at [sun] altitude: under the horizon until civil dusk, then
+   * rising straight up to [NIGHT_MOON] as the sky darkens (2026-11-20: it used to jump there at
+   * dusk, which the timelapse showed as a pop), and setting the same way before dawn.
+   */
+  private fun clockMoon(sun: Float) = SunAndMoon.Place(lerp(SET_MOON, NIGHT_MOON.altitude, smooth((DARK - sun) / MOONRISE)), NIGHT_MOON.azimuth)
 
   /** One keyframe. Its colour arrays are never written, so keyframes may share them. */
   private class Sky(

@@ -74,7 +74,7 @@ class CornersTest {
         val height = d[o + 4]
         val plaza = col - (n - 7) in 2..4 && row == 6
         if (col >= n - 7 && !plaza) assertTrue("mall module ($col, $row) is $height", height >= Corners.MALL - 1e-4f)
-        else assertEquals("lawn or plaza module ($col, $row)", Corners.LAWN_HEIGHT, height, 1e-4f)
+        else assertEquals("lawn or plaza module ($col, $row)", Corners.UNDER_LAWN, height, 1e-4f)
       }
     }
   }

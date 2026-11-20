@@ -52,7 +52,7 @@ internal object KualaLumpur {
   const val SLOTS = 32
 
   /**
-   * The fixed materials of the KL preset: its six districts' colours (see [FlatColours]), the
+   * The fixed materials of the KL preset: its six districts (see [FlatColours]), the
    * traffic's undercoat of glass, steel, cream render and teal, and the landmarks' palette.
    */
   val materials =
@@ -74,13 +74,8 @@ internal object KualaLumpur {
         *Materials.rgb(0xDDCDA8), *Materials.rgb(0xEFEDE8), *Materials.rgb(0xD22630), *Materials.rgb(0xF4F4F2),
         *Materials.rgb(0xF3C6D3), *Materials.rgb(0xFFCC85), *Materials.rgb(0xD6EDFF), *FloatArray(27),
       ),
-      // The garden's green glass, the mall's champagne, the square's brick, the twin towers'
-      // steel, the supertall's blue glass and the telecom tower's teal, in FlatColours' order.
-      districts =
-        floatArrayOf(
-          *Materials.rgb(0x6FAF8A), *Materials.rgb(0xDCB27C), *Materials.rgb(0xC66B4E),
-          *Materials.rgb(0xAAB6C4), *Materials.rgb(0x5B8CC4), *Materials.rgb(0x4FA6A0),
-        ),
+      // The gardens, the mall, the square, the twin towers, the supertall and the telecom tower.
+      districts = 6,
     )
 
   /** Twin tower height for a QR [modules] wide: the other landmarks follow in true proportion. */
@@ -261,10 +256,11 @@ internal object KualaLumpur {
 
   /**
    * The monorail's track along [route]: a beam that bends with it, a pillar on every other module
-   * of the street below ([cells], world centres), and a station at each end. Everything stays
-   * within the street's own width, so the line never touches a building.
+   * of the street below ([cells], world centres), and a station at each of [stops], indices into
+   * [cells], the first and the last the line's ends. Everything stays within the street's own
+   * width, so the line never touches a building.
    */
-  fun track(out: Instances, route: Route, cells: List<Pair<Float, Float>>) {
+  fun track(out: Instances, route: Route, cells: List<Pair<Float, Float>>, stops: List<Int>) {
     for (i in 0 until route.count - 1) {
       val dx = route.x(i + 1) - route.x(i)
       val dz = route.z(i + 1) - route.z(i)
@@ -281,18 +277,20 @@ internal object KualaLumpur {
       val (x, z) = cells[k]
       out.put(x, RAIL_Y / 2f, z, 0.16f, RAIL_Y, 0.16f, CityPlanner.ROLE_RAIL, 0f, 0f, colour(CONCRETE))
     }
-    for (end in listOf(0 to 1, cells.size - 1 to cells.size - 2)) {
-      val (x, z) = cells[end.first]
-      val (nx, nz) = cells[end.second]
-      val yaw = StrictMath.atan2((nz - z).toDouble(), (nx - x).toDouble()).toFloat()
+    for (stop in stops) {
+      val (x, z) = cells[stop]
+      // Along the track there: from the module before to the one after, or the one there is.
+      val (px, pz) = cells[max(stop - 1, 0)]
+      val (nx, nz) = cells[min(stop + 1, cells.size - 1)]
+      val yaw = StrictMath.atan2((nz - pz).toDouble(), (nx - px).toDouble()).toFloat()
       // A deck the train pulls in beside, and a canopy over it, on slim posts at its edges.
       out.put(x, RAIL_Y - 0.17f, z, 1.0f, 0.10f, 0.72f, CityPlanner.ROLE_RAIL, 0f, 0f, colour(CONCRETE), yaw)
       out.put(x, RAIL_Y + 0.78f, z, 1.0f, 0.06f, 0.72f, CityPlanner.ROLE_RAIL, 0f, 0f, colour(GLASS), yaw)
       for (side in floatArrayOf(-0.33f, 0.33f)) {
         // Across the track is (-sin, cos) of its heading.
-        val px = x - side * StrictMath.sin(yaw.toDouble()).toFloat()
-        val pz = z + side * StrictMath.cos(yaw.toDouble()).toFloat()
-        out.put(px, RAIL_Y + 0.31f, pz, 0.05f, 0.85f, 0.05f, CityPlanner.ROLE_RAIL, 0f, 0f, colour(STEEL))
+        val sx = x - side * StrictMath.sin(yaw.toDouble()).toFloat()
+        val sz = z + side * StrictMath.cos(yaw.toDouble()).toFloat()
+        out.put(sx, RAIL_Y + 0.31f, sz, 0.05f, 0.85f, 0.05f, CityPlanner.ROLE_RAIL, 0f, 0f, colour(STEEL))
       }
     }
   }

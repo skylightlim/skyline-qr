@@ -45,22 +45,38 @@ import kotlin.math.max
  */
 internal object Corners {
 
-  /** The garden's and the square's finder modules: a low lawn. */
+  /** The lawn's height, which the garden's and the square's ring and core are covered in. */
   const val LAWN_HEIGHT = 0.12f
 
-  /** The mall: seven floors of shops, drawn three high like every finder podium of the city. */
-  const val MALL = 3 * CityPlanner.FLOOR
+  /**
+   * The garden's and the square's finder modules, and the mall's plaza's (2026-11-20): just off the
+   * ground, under the lawn and paving that cover them. At the lawn's own height they stood over
+   * the lawn for most of the raise from the code, while it climbed out from under the plate, so the
+   * square's red showed long after every other colour had gone (the user: "the red morph into
+   * green too late").
+   */
+  const val UNDER_LAWN = 0.02f
 
-  /** The two cubes of the mall's facade stand well over its body, nearly as tall as they are wide. */
-  const val CUBE = MALL + 0.84f
+  /**
+   * The mall: seven floors of shops, drawn four high (2026-11-12, at the user's request: taller,
+   * so its name is not hidden; it was three, like every finder podium of the generic city).
+   */
+  const val MALL = 4 * CityPlanner.FLOOR
+
+  /** The two cubes of the mall's facade stand well over its body, as tall as they are wide. */
+  const val CUBE = MALL + 1.0f
 
   /** Where the cubes start, from the finder's north edge: behind them, the body. */
-  private const val CUBES_FROM = 4.3f
+  private const val CUBES_FROM = 3.5f
 
-  /** The cubes' inner walls, either side of the entrance, and its face, set back from the street. */
+  /**
+   * The cubes' inner walls, either side of the entrance, and its face, set back from the street: a
+   * hair in front of the finder's core, whose modules stand to 5.0 (on that plane the glass and
+   * the modules' walls flickered between each other, 2026-11-12).
+   */
   private const val WEST_CUBE = 2.55f
   private const val EAST_CUBE = 4.45f
-  private const val ENTRANCE = 5.85f
+  private const val ENTRANCE = 5.02f
   private const val ENTRANCE_TOP = CUBE - 0.22f
 
   /** The restaurant on the crossing: two floors. */
@@ -77,12 +93,12 @@ internal object Corners {
 
   /**
    * How tall a finder module ([x], [z]) stands in Kuala Lumpur: the mall's are its full height but
-   * for the plaza before its entrance, the middle three of its south side; the rest are lawn.
+   * for the plaza before its entrance, the middle three of its south side; the rest lie under lawn.
    */
   fun height(x: Int, z: Int, n: Int): Float {
-    if (x < 7 || z >= 7) return LAWN_HEIGHT
+    if (x < 7 || z >= 7) return UNDER_LAWN
     val plaza = z == 6 && x - (n - 7) in 2..4
-    return if (plaza) LAWN_HEIGHT else MALL
+    return if (plaza) UNDER_LAWN else MALL
   }
 
   fun build(out: Instances, n: Int) {
@@ -94,14 +110,28 @@ internal object Corners {
 
   /**
    * The billboard's screen, standing on the roof of the mall's east cube, set back behind its
-   * facade so the fins show beneath it, facing south over the plaza: as [City.screen].
+   * facade so the fins show beneath it, facing south over the plaza: as [City.screen]. Half as
+   * large again since 2026-11-12, at the user's request, so it reaches out over the entrance.
    */
-  const val SCREEN_WIDTH = 2.33f
-  const val SCREEN_HEIGHT = 1.0f
+  const val SCREEN_WIDTH = 3.5f
+  const val SCREEN_HEIGHT = 1.5f
+
+  /** The fountain on the mall's plaza: its middle, from the finder's north edge, and its top over the paving. */
+  private const val FOUNTAIN_V = 6.0f
+  private const val FOUNTAIN_TOP = 2.4f
+
+  /**
+   * Where the fountain's jet leaves the top of its stem, x, y and z, for the renderer to play its
+   * water from: as [City.fountain].
+   */
+  fun fountain(n: Int): FloatArray {
+    val half = n / 2f
+    return floatArrayOf(n - 7 + 3.5f - half, GROUND + FOUNTAIN_TOP, FOUNTAIN_V - half)
+  }
 
   fun screen(n: Int): FloatArray {
     val half = n / 2f
-    return floatArrayOf(n - 7 + 5.72f - half, CUBE + 0.33f + SCREEN_HEIGHT / 2f, 5.4f - half, SCREEN_WIDTH, SCREEN_HEIGHT)
+    return floatArrayOf(n - 7 + 5.2f - half, CUBE + 0.33f + SCREEN_HEIGHT / 2f, 5.4f - half, SCREEN_WIDTH, SCREEN_HEIGHT)
   }
 
   /** Where the helicopter must not fly: x, z, radius and height, as Traffic's obstacles. */
@@ -130,8 +160,8 @@ internal object Corners {
     }
 
     /** A piece of flag cloth, [wave] from the pole (0) to the fly (1); see [KualaLumpur.flagColour]. */
-    fun cloth(u: Float, v: Float, y0: Float, y1: Float, su: Float, sv: Float, colour: Int, wave: Float) {
-      out.put(x0 + u, (y0 + y1) / 2f, z0 + v, su, y1 - y0, sv, CityPlanner.ROLE_LANDMARK, 0.9f, 0f, KualaLumpur.flagColour(colour, wave), 0f, 1f)
+    fun cloth(u: Float, v: Float, y0: Float, y1: Float, su: Float, sv: Float, colour: Int, wave: Float, glow: Float = 0.9f) {
+      out.put(x0 + u, (y0 + y1) / 2f, z0 + v, su, y1 - y0, sv, CityPlanner.ROLE_LANDMARK, glow, 0f, KualaLumpur.flagColour(colour, wave), 0f, 1f)
     }
 
     /** A slab over the finder's ring of modules, [y1] high, in four pieces that meet without overlapping. */
@@ -160,10 +190,50 @@ internal object Corners {
         }
         // A hair over the stripes' top edge, not on it.
         if (i < 4) cloth(at, v, top - tall * 0.57f, top + 0.003f, piece * 1.01f, 0.03f, FLAG_BLUE, wave)
-        if (i == 1 || i == 2) cloth(at, v, top - tall * 0.45f, top - tall * 0.12f, piece * 1.01f, 0.04f, FLAG_YELLOW, wave)
+      }
+      emblem(u, v, top - tall * 0.285f, length, tall * 0.57f / 7f)
+    }
+
+    /**
+     * Kuala Lumpur's own flag (2026-11-12, at the user's request, after the flag on Wikimedia
+     * Commons), flying like [flag]: white, three red stripes across the top third and three across
+     * the bottom, a dark blue band through the middle, and on it toward the hoist the yellow
+     * crescent and star.
+     */
+    fun cityFlag(u: Float, v: Float, top: Float, length: Float) {
+      val tall = length / 2f
+      val piece = length / 8f
+      val row = tall / 21f
+      for (i in 0 until 8) {
+        val wave = (i + 0.5f) / 8f
+        val at = u + (i + 0.5f) * piece
+        cloth(at, v, top - tall, top, piece * 1.01f, 0.02f, FLAG_WHITE, wave)
+        for (k in intArrayOf(1, 3, 5, 15, 17, 19)) cloth(at, v, top - (k + 1) * row, top - k * row, piece * 1.01f, 0.03f, FLAG_RED, wave)
+        cloth(at, v, top - 14 * row, top - 7 * row, piece * 1.01f, 0.03f, FLAG_BLUE, wave)
+      }
+      // A little larger than life, or it is lost at this size.
+      emblem(u, v, top - tall / 2f, length, row * 1.3f)
+    }
+
+    /**
+     * The crescent and star in yellow pixels [cell] across, a quarter of the way along a flag
+     * [length] long from its hoist at [u], centred on height [y]: the crescent open toward the
+     * fly, the star in its mouth. On both faces, and waving with the cloth under it.
+     */
+    private fun emblem(u: Float, v: Float, y: Float, length: Float, cell: Float) {
+      for ((r, line) in EMBLEM.withIndex()) for ((c, mark) in line.withIndex()) {
+        if (mark != 'X') continue
+        val x = u + length * 0.24f + (c - 2.5f) * cell
+        val h = y + (2 - r) * cell
+        // A piece narrower than an eighth of the flag says in its glow how much narrower, so the
+        // shader waves it with the cloth under it (see Wgsl.place).
+        cloth(x, v, h - cell / 2f, h + cell / 2f, cell * 1.02f, 0.045f, FLAG_YELLOW, (x - u) / length, glow = 0.5f + 0.3f * cell * 1.02f / (length / 8f * 1.01f))
       }
     }
   }
+
+  /** The flags' crescent and star, row by row from the top. */
+  private val EMBLEM = arrayOf(".XX...", "X.....", "X...X.", "X.....", ".XX...")
 
   // -----------------------------------------------------------------------------------------------
   // The botanical garden and the national monument
@@ -275,26 +345,30 @@ internal object Corners {
     p.box(3.5f, (CUBES_FROM + ENTRANCE) / 2f, 0f, ENTRANCE_TOP, EAST_CUBE - WEST_CUBE, ENTRANCE - CUBES_FROM, GLASS, glow = 0.3f, plain = false)
     p.box(3.5f, (CUBES_FROM + ENTRANCE) / 2f, ENTRANCE_TOP, ENTRANCE_TOP + 0.04f, EAST_CUBE - WEST_CUBE + 0.04f, ENTRANCE - CUBES_FROM + 0.04f, CONCRETE, glow = 0.2f)
     for ((u0, u1) in listOf(0f to WEST_CUBE, EAST_CUBE to 7f)) cube(p, u0, u1)
-    // The name on a dark band over the entrance, its letters cool white; the glass canopy below.
+    // The name on a dark band over the entrance, its letters cool white (2026-11-12, at the
+    // user's request, back from a board on the roof); the glass canopy below.
     val band = ENTRANCE_TOP - 0.36f
     p.box(3.5f, ENTRANCE + 0.03f, band, ENTRANCE_TOP - 0.03f, EAST_CUBE - WEST_CUBE - 0.02f, 0.06f, SMOKE)
     name(p, ENTRANCE + 0.07f, (band + ENTRANCE_TOP - 0.03f) / 2f)
     p.box(3.5f, ENTRANCE + 0.17f, 0.62f, 0.66f, EAST_CUBE - WEST_CUBE - 0.1f, 0.34f, STEEL, glow = 0.3f)
-    // The plaza's paving over its low modules, and the crystal fountain on it.
+    // The plaza's paving over its low modules, and the crystal fountain on it: since 2026-11-09,
+    // at the user's request, the plaza is two modules deep (the body behind gave way) and the
+    // fountain twice as tall and half as wide again, its jet and spray the renderer's (see
+    // [fountain]).
     val y = GROUND
     // A hair past the street edge, in front of the modules' walls rather than on their plane.
     p.box(3.5f, (ENTRANCE + 7.01f) / 2f, 0f, y, EAST_CUBE - WEST_CUBE, 7.01f - ENTRANCE, GRANITE)
-    p.round(3.5f, 6.4f, y, y + 0.08f, 0.5f, 0.5f, WATER)
-    for (k in 0 until 8) {
-      val a = k * 0.785398f
-      p.box(3.5f + 0.6f * StrictMath.cos(a.toDouble()).toFloat(), 6.4f + 0.42f * StrictMath.sin(a.toDouble()).toFloat(), y, y + 0.16f, 0.04f, 0.04f, RED, glow = 0.5f)
+    p.round(3.5f, FOUNTAIN_V, y, y + 0.1f, 0.82f, 0.82f, WATER)
+    for (k in 0 until 12) {
+      val a = k * 0.5235988f
+      p.box(3.5f + 0.88f * StrictMath.cos(a.toDouble()).toFloat(), FOUNTAIN_V + 0.88f * StrictMath.sin(a.toDouble()).toFloat(), y, y + 0.2f, 0.05f, 0.05f, RED, glow = 0.5f)
     }
-    p.round(3.5f, 6.4f, y + 0.08f, y + 1.2f, 0.07f, 0.05f, STEEL, glow = 0.6f)
-    p.round(3.5f, 6.4f, y + 0.22f, y + 0.46f, 0.16f, 0.5f, CRYSTAL, glow = 0.9f)
-    p.round(3.5f, 6.4f, y + 0.6f, y + 0.8f, 0.12f, 0.38f, CRYSTAL, glow = 0.95f)
-    p.round(3.5f, 6.4f, y + 0.92f, y + 1.08f, 0.09f, 0.26f, CRYSTAL, glow = 1f)
+    p.round(3.5f, FOUNTAIN_V, y + 0.1f, y + FOUNTAIN_TOP, 0.11f, 0.08f, STEEL, glow = 0.6f)
+    p.round(3.5f, FOUNTAIN_V, y + 0.44f, y + 0.92f, 0.26f, 0.8f, CRYSTAL, glow = 0.9f)
+    p.round(3.5f, FOUNTAIN_V, y + 1.2f, y + 1.6f, 0.19f, 0.6f, CRYSTAL, glow = 0.95f)
+    p.round(3.5f, FOUNTAIN_V, y + 1.84f, y + 2.16f, 0.14f, 0.42f, CRYSTAL, glow = 1f)
     // Two legs for the billboard's screen on the east cube's roof; the screen is the renderer's.
-    for (u in floatArrayOf(5.0f, 6.45f)) p.box(u, 5.4f, CUBE + 0.03f, CUBE + 0.35f, 0.07f, 0.07f, STEEL, glow = 0.4f)
+    for (u in floatArrayOf(4.75f, 6.6f)) p.box(u, 5.4f, CUBE + 0.03f, CUBE + 0.35f, 0.07f, 0.07f, STEEL, glow = 0.4f)
     // The residence towers on the body, the western one taller, each with a stepped crown.
     val (west, east) = residences(n).let { it[0] to it[1] }
     tower(p, RESIDENCES[0], RESIDENCES[1], roof, roof + west)
@@ -377,7 +451,7 @@ internal object Corners {
 
   /**
    * The padang: lawn on the ring and the core, the promenade the finder's gap. On the core, the
-   * flagpole with the national flag waving; along the far side, the old secretariat in red brick
+   * flagpole with the city's flag waving; along the far side, the old secretariat in red brick
    * with white bands, its clock tower and copper onion domes (on the real square it stands on the
    * east side; here it lines the north, so it hides none of the lawn); along the west, the club
    * house in white and dark timber under its hipped roof.
@@ -391,7 +465,7 @@ internal object Corners {
     p.box(3.5f, 3.5f, GROUND, GROUND + 0.18f, 0.5f, 0.5f, GRANITE, glow = 0.4f)
     p.box(3.5f, 3.5f, GROUND + 0.18f, h, 0.07f, 0.07f, STEEL, glow = 1f, taper = 0.6f)
     p.box(3.5f, 3.5f, h, h + 0.07f, 0.11f, 0.11f, STEEL, glow = 1f)
-    p.flag(3.53f, 3.5f, h - 0.02f, 1.3f)
+    p.cityFlag(3.53f, 3.5f, h - 0.02f, 1.3f)
     secretariat(p)
     // The club house.
     p.box(0.5f, 3.8f, GROUND, 0.55f, 0.8f, 3.0f, CONCRETE, glow = 0.4f)
@@ -432,6 +506,73 @@ internal object Corners {
   // Bukit Bintang's crossing
   // -----------------------------------------------------------------------------------------------
 
+  /** The crossing's road over the alignment pattern's dark modules: as low as a tile, so it folds into ink. */
+  const val PAVED = 0.04f
+
+  /**
+   * The alignment pattern's middle module, row by row, where the crossing stands since 2026-11-09
+   * (the user's call): the pattern is the code's corner nearest the camera's usual side, so the
+   * crossing is always in front. -1 for a version 1 code, which has no alignment pattern; then
+   * the crossing keeps to the junction nearest the mall ([crossing]). Versions 2 to 6, all a city
+   * can be, have exactly one, seven modules in from the bottom right.
+   */
+  fun alignment(matrix: QrMatrix): Int {
+    val n = matrix.size
+    val c = n - 7
+    return if (n > 21 && matrix.role(c, c) == QrRole.ALIGNMENT) c * n + c else -1
+  }
+
+  /**
+   * The pattern's dark modules paved as road: its middle, the crossing's middle, and the middle
+   * of each side of its ring, the arms that lead into the square.
+   */
+  fun paved(crossing: Int, n: Int): Set<Int> {
+    val c = crossing % n
+    val r = crossing / n
+    return setOf(crossing, r * n + c - 2, r * n + c + 2, (r - 2) * n + c, (r + 2) * n + c)
+  }
+
+  /** The restaurant on the crossing: the ring's corner away from the camera, so it hides none of it. */
+  fun restaurant(crossing: Int, n: Int) = crossing - 2 * n - 2
+
+  /**
+   * How tall the ring round the crossing stands at module ([x], [z]): low shops of one or two
+   * floors, so the camera sees into the square over them.
+   */
+  fun ringHeight(x: Int, z: Int, seed: Int) = CityPlanner.FLOOR * (if (unit(x, z, seed + 4243) < 0.5f) 1 else 2)
+
+  /**
+   * The crossing on the alignment pattern, whose middle module is [crossing]: asphalt over its
+   * three by three square and the four arms through the ring, zebra stripes across each arm where
+   * it meets the square and along both diagonals, which meet in the middle, the way people cross
+   * every way at once, and the restaurant on the far corner.
+   */
+  fun alignmentCrossing(out: Instances, crossing: Int, n: Int) {
+    val half = n / 2f
+    val cx = crossing % n + 0.5f - half
+    val cz = crossing / n + 0.5f - half
+    val white = KualaLumpur.colour(CONCRETE, plain = true)
+    val asphalt = KualaLumpur.colour(SMOKE, plain = true)
+    fun stripe(x: Float, z: Float, sx: Float, sz: Float, yaw: Float) {
+      out.put(x, 0.08f, z, sx, 0.01f, sz, CityPlanner.ROLE_LANDMARK, 0f, 0f, white, yaw, 1f)
+    }
+    out.put(cx, 0.0725f, cz, 3f, 0.005f, 3f, CityPlanner.ROLE_LANDMARK, 0f, 0f, asphalt, 0f, 1f)
+    for ((dc, dr) in listOf(1 to 0, -1 to 0, 0 to 1, 0 to -1)) {
+      out.put(cx + 2 * dc, 0.0725f, cz + 2 * dr, 1f, 0.005f, 1f, CityPlanner.ROLE_LANDMARK, 0f, 0f, asphalt, 0f, 1f)
+      for (k in 0 until 5) {
+        val t = 1.6f + k * 0.16f
+        if (dc != 0) stripe(cx + dc * t, cz, 0.08f, 0.8f, 0f) else stripe(cx, cz + dr * t, 0.8f, 0.08f, 0f)
+      }
+    }
+    for (k in -8..8) for (sign in floatArrayOf(1f, -1f)) {
+      // Each stripe lies across its diagonal: turned an eighth of a turn one way or the other.
+      if (k == 0 && sign < 0f) continue
+      stripe(cx + k * 0.15f, cz + k * 0.15f * sign, 0.08f, 0.5f, sign * EIGHTH)
+    }
+    val r = restaurant(crossing, n)
+    restaurant(out, r % n + 0.5f - half, r / n + 0.5f - half)
+  }
+
   /**
    * The junction with lights nearest the plaza in front of the mall that the monorail ([rail], its
    * track) does not pass over and no landmark of [landmarks] crowds, which becomes the crossing;
@@ -441,6 +582,8 @@ internal object Corners {
     var best = -1
     var nearest = Float.MAX_VALUE
     for (j in signals.offsets.indices) {
+      // Never one of the ring road's, outside the code.
+      if (signals.cells[j * 2] !in 0 until n || signals.cells[j * 2 + 1] !in 0 until n) continue
       val col = signals.cells[j * 2] + 0.5f
       val row = signals.cells[j * 2 + 1] + 0.5f
       val dx = col - (n - 3.5f)

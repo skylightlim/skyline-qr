@@ -9,6 +9,7 @@ import com.skylightlim.skylineqr.city.Vehicles
 import com.skylightlim.skylineqr.city.Weather
 import com.skylightlim.skylineqr.core.CityIdentity
 import com.skylightlim.skylineqr.core.QrEncoder
+import com.skylightlim.skylineqr.render.tour.Tour
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -29,7 +30,7 @@ class FrameDumpTest {
     val city = CityPlanner.plan(QrEncoder.encode(identity.link.payload), identity, CityPreset.KUALA_LUMPUR)
     // SKYLINEQR_SIZE="1080x2400" draws at the 6a's portrait screen, where the sky shows.
     val (width, height) = (System.getenv("SKYLINEQR_SIZE") ?: "1080x1350").split('x').map { it.trim().toInt() }
-    val seconds = 12f
+    val seconds = (System.getenv("SKYLINEQR_SECONDS") ?: "12").toFloat()
     // SKYLINEQR_LOOK="x,z" slides the city so that point is in the middle, for the close view.
     val look = System.getenv("SKYLINEQR_LOOK")?.split(',')?.map { it.trim().toFloat() } ?: listOf(0f, 0f)
     fun slide(data: FloatArray): FloatArray {
@@ -48,6 +49,7 @@ class FrameDumpTest {
     }
     for (m in city.movers) Vehicles.emit(m, seconds, sink, scratch)
     Vehicles.signals(city.signals, seconds, sink)
+    city.fountain?.let { Fountain.emit(sink, it, seconds) }
     // The billboard, its messages drawn with the desktop's fonts in place of Android's.
     val messages = (System.getenv("SKYLINEQR_BILLBOARD") ?: "马大牛逼|tarumt #1|i need argon").split('|')
     val (atlas, widths) = atlas(messages)
@@ -62,7 +64,7 @@ class FrameDumpTest {
     // or the moon, a storm's bolt, haze's wind streaks; then its rain drops and streaks to draw.
     // [ways] overrides where the clear sky's clouds and the storm deck are, for a change caught
     // half way.
-    fun weather(name: String, air: Atmosphere, weather: Weather, flash: Float = 0f, front: Float = 1f, ways: FloatArray? = null): IntArray {
+    fun weather(name: String, air: Atmosphere, weather: Weather, flash: Float = 0f, front: Float = 1f, ways: FloatArray? = null, extra: (Vehicles.Sink) -> Unit = {}): IntArray {
       while (traffic.size > base) traffic.removeAt(traffic.size - 1)
       val amounts = SkyParts.Amounts(
         fair = ways?.get(0) ?: if (weather == Weather.CLEAR) 0f else 1f,
@@ -79,6 +81,7 @@ class FrameDumpTest {
         SkyParts.bolt(sink, city, seconds, false, amounts, 7, lit, rods[rod * 3], rods[rod * 3 + 1], rods[rod * 3 + 2], flash)
       }
       SkyParts.emit(sink, city, seconds, false, amounts, air, lit, flash)
+      extra(sink)
       write(File(dir, "traffic-$name.bin"), slide(traffic.toFloatArray()))
       val drops = (2600 * air.rain).toInt()
       val gusts = if (weather == Weather.HAZE) 64 else 0
@@ -92,14 +95,17 @@ class FrameDumpTest {
         Triple("storm", TimeOfDay.NIGHT, Weather.STORM),
       )
     val manifest = StringBuilder()
-    fun scene(name: String, air: Atmosphere, weatherOf: Weather, fold: Float, view: View, flash: Float = 0f, front: Float = 1f, ways: FloatArray? = null) {
-      val (moving, drops, gusts) = weather(name, air, weatherOf, flash, front, ways)
+    fun scene(
+      name: String, air: Atmosphere, weatherOf: Weather, fold: Float, view: View, flash: Float = 0f, front: Float = 1f, ways: FloatArray? = null,
+      extra: (Vehicles.Sink) -> Unit = {},
+    ) {
+      val (moving, drops, gusts) = weather(name, air, weatherOf, flash, front, ways, extra)
       val pose = Camera.pose(city, width.toFloat() / height, fold, seconds, view)
       val frame = FloatArray(Wgsl.FRAME_FLOATS)
       FrameData.pack(
         frame, pose, Camera.light(city, air.sunDir), fold, city, air, seconds, flash, false, false, front, if (gusts > 0) 1f else 0f,
         meteor = floatArrayOf(0f, 0f, -1f, 0f), damage = floatArrayOf(0f, 0f, -1f, 0f), bolt = floatArrayOf(0f, 0f, 0f, 0f),
-        screen = screen,
+        screen = screen, stars = FrameData.stars(city, air, height),
       )
       write(File(dir, "frame-$name.bin"), frame)
       val sky = air.skyHorizon
@@ -124,6 +130,17 @@ class FrameDumpTest {
       scene("to-storm-$i", Atmospheres.at(TimeOfDay.DAY, Weather.STORM, 0f), Weather.STORM, 0f, View(), ways = ways)
     }
     scene("to-clear", Atmospheres.at(TimeOfDay.DAY, Weather.CLEAR, 0f), Weather.CLEAR, 0f, View(), ways = floatArrayOf(-0.3f, 0.45f))
+    // Fireworks over the city at night: two long-press volleys and the big night's shells from the
+    // landmarks, caught mid-burst.
+    val fireworks = Fireworks()
+    fireworks.volley(seconds - 1.5f, -3f, 4f, -3f, city.maxHeight * 0.7f + 2f, 4f, 1)
+    fireworks.volley(seconds - 1.1f, 5f, -2f, 5f, city.maxHeight * 0.8f + 2f, -2f, 2)
+    val sites = CityRenderer.launchSites(city)
+    for (k in 0 until sites.size / 3) {
+      fireworks.launch(seconds - 1.2f - k * 0.2f, floatArrayOf(sites[k * 3], sites[k * 3 + 1], sites[k * 3 + 2]),
+        floatArrayOf(sites[k * 3], sites[k * 3 + 1] + 4f, sites[k * 3 + 2]), 50 + k)
+    }
+    scene("fireworks", Atmospheres.at(TimeOfDay.NIGHT, Weather.CLEAR, 0f), Weather.CLEAR, 0f, View()) { fireworks.emit(it, seconds) }
     // SKYLINEQR_NOW=<epoch millis>[,<millis>...] adds Now at those instants, with the real sun and moon.
     System.getenv("SKYLINEQR_NOW")?.split(',')?.forEachIndexed { i, at ->
       val millis = at.trim().toLong()
@@ -152,6 +169,41 @@ class FrameDumpTest {
         val sky = air.skyHorizon
         manifest.append("$name $fold ${sky[0] * 0.85f} ${sky[1] * 0.85f} ${sky[2] * 0.85f}\n")
       }
+    }
+    // SKYLINEQR_TOUR=<seconds between frames> adds the tour as a filmstrip, tour-00, tour-01 and so
+    // on, under a clear day (SKYLINEQR_TOUR_SKY=night for a clear night), everything that moves
+    // where it is at that moment. See render/tour/README.md.
+    System.getenv("SKYLINEQR_TOUR")?.let { every ->
+      val step = every.trim().toFloat()
+      val night = System.getenv("SKYLINEQR_TOUR_SKY") == "night"
+      val air = Atmospheres.at(if (night) TimeOfDay.NIGHT else TimeOfDay.DAY, Weather.CLEAR, 0f)
+      val tour = Tour(city, width.toFloat() / height)
+      var k = 0
+      while (k * step <= tour.length + 1e-3f) {
+        val t = k * step
+        val boxes = ArrayList<Float>()
+        val at = Vehicles.Sink { x, y, z, sx, sy, sz, role, glow, rnd, yaw, taper -> boxes += listOf(x, y, z, sx, sy, sz, role, glow, 0f, rnd, yaw, taper) }
+        for (m in city.movers) Vehicles.emit(m, t, at, scratch)
+        Vehicles.signals(city.signals, t, at)
+        city.fountain?.let { Fountain.emit(at, it, t) }
+        city.screen?.let { boxes += listOf(it[0], it[1], it[2], it[3], it[4], 0.08f, CityPlanner.ROLE_SCREEN, 0f, 0f, 0f, 0f, 1f) }
+        SkyParts.emit(at, city, t, false, SkyParts.Amounts(fair = 0f, deck = 1f, shine = 1f), air)
+        val name = "tour-%02d".format(k)
+        write(File(dir, "traffic-$name.bin"), slide(boxes.toFloatArray()))
+        val frame = FloatArray(Wgsl.FRAME_FLOATS)
+        FrameData.pack(
+          frame, tour.pose(t), Camera.light(city, air.sunDir), 0f, city, air, t, 0f, false, false, 1f, 0f,
+          meteor = floatArrayOf(0f, 0f, -1f, 0f), damage = floatArrayOf(0f, 0f, -1f, 0f), bolt = floatArrayOf(0f, 0f, 0f, 0f),
+          screen = screen, stars = FrameData.stars(city, air, height),
+        )
+        write(File(dir, "frame-$name.bin"), frame)
+        val sky = air.skyHorizon
+        manifest.append("$name 0 ${sky[0] * 0.85f} ${sky[1] * 0.85f} ${sky[2] * 0.85f} ${boxes.size / CityPlanner.STRIDE} 0 0\n")
+        k++
+      }
+      File(dir, "tour.txt").writeText(
+        "${tour.length} s, then the fold\n" + tour.sights.joinToString("\n") + "\n"
+      )
     }
     File(dir, "scenes.txt").writeText(manifest.toString())
     File(dir, "meta.txt").writeText("$width $height ${city.count} ${base / CityPlanner.STRIDE}\n")

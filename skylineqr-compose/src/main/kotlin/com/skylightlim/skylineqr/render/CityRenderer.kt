@@ -89,11 +89,12 @@ import com.skylightlim.skylineqr.city.Atmosphere
 import com.skylightlim.skylineqr.city.Atmospheres
 import com.skylightlim.skylineqr.city.City
 import com.skylightlim.skylineqr.city.CityPlanner
+import com.skylightlim.skylineqr.city.Festivals
 import com.skylightlim.skylineqr.city.Vehicles
 import com.skylightlim.skylineqr.city.TimeOfDay
 import com.skylightlim.skylineqr.city.Weather
-import com.skylightlim.skylineqr.compose.SkyPart
 import com.skylightlim.skylineqr.compose.SkylineEvent
+import com.skylightlim.skylineqr.render.tour.Tour
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.concurrent.CountDownLatch
@@ -164,9 +165,9 @@ internal class CityRenderer(
     }
 
   /**
-   * Whether the weather's clouds show (2026-11-07, at the user's request, set from a long press on
-   * one). Off, the clear sky's clouds and a storm's deck blow away downwind, and lightning comes
-   * from high above; on, they blow back in from upwind.
+   * Whether the weather's clouds show (2026-11-07, at the user's request; a setting in the app).
+   * Off, the clear sky's clouds and a storm's deck blow away downwind, and lightning comes from
+   * high above; on, they blow back in from upwind.
    */
   @Volatile
   var clouds = true
@@ -193,7 +194,7 @@ internal class CityRenderer(
   var framesDrawn = 0
     private set
 
-  private val thread = HandlerThread("SkylineQR-WebGPU").apply { start() }
+  private val thread = HandlerThread("SkylineQR-WebGPU", android.os.Process.THREAD_PRIORITY_DISPLAY).apply { start() }
   private val handler = Handler(thread.looper)
   private val dispatcher = handler.asCoroutineDispatcher("SkylineQR-WebGPU")
   private val scope = CoroutineScope(SupervisorJob() + dispatcher)
@@ -246,7 +247,7 @@ internal class CityRenderer(
   /** The light and the air as last shown, which [atmosphere] eases toward [target]. */
   private var atmosphere: Atmosphere? = null
   private var target: Atmosphere? = null
-  private var shownFor: Pair<TimeOfDay, Weather>? = null
+  private var shownFor: Pair<TimeOfDay?, Weather>? = null
   private var blendFrom: Atmosphere? = null
   private var blendAt = 0f
   private var blendFor = 1f
@@ -260,9 +261,39 @@ internal class CityRenderer(
   private var wind = 0f
   /** The storm cloud the current bolt leaves; -1 when it comes from high above. */
   private var boltCloud = -1
-  /** How many boxes of [traffic] the last frame drew, for a long press to look among. */
-  private var pickable = 0
-  private var atmosphereFor: Pair<TimeOfDay, Weather>? = null
+
+  /** Fireworks (2026-11-09): a long press's volleys, and Kuala Lumpur's own on its big nights. */
+  private val fireworks = Fireworks()
+  private var presses = 0
+  private var festival = Festivals.NONE
+  private var festivalAt = 0L
+  private var nextShell = 0f
+  private var shells = 0
+  /** Where the big nights' fireworks go up from, x, top and z each, for [sitesFor]. */
+  private var sites = FloatArray(0)
+  private var sitesFor: City? = null
+
+  /**
+   * The tour (2026-11-09): waiting for the city to stand, flying, and the clear day or night it
+   * flies under, whatever the person chose; after one is stopped, the camera eases from where it
+   * left off ([leftTour], at [leftAt]) back to the city's own view.
+   */
+  private var tour: Tour? = null
+  private var tourPending = false
+  private var tourSky: Pair<TimeOfDay, Weather>? = null
+  private var tourEnd: ((Boolean) -> Unit)? = null
+  private var leftTour: Pose? = null
+  private var leftAt = 0f
+  /** Where the camera was as a tour began (its clock restarts, so its sway would jump), eased out of over [ENTER]. */
+  private var enteredFrom: Pose? = null
+
+  /**
+   * The timelapse (2026-11-20, at the user's request): when it began on the renderer's clock, or -1
+   * while none runs, and who hears how it ended.
+   */
+  private var lapseAt = -1f
+  private var lapseEnd: ((Boolean) -> Unit)? = null
+  private var atmosphereFor: Pair<TimeOfDay?, Weather>? = null
   private var atmosphereAt = 0L
   private val morph = Morph()
   private val frame = FloatArray(Wgsl.FRAME_FLOATS)
@@ -279,16 +310,19 @@ internal class CityRenderer(
   private val frameCallback =
     Choreographer.FrameCallback { nanos ->
       looping = false
-      if (drawFrame(nanos)) wake()
+      // On a 120 Hz screen draw every other frame: a steady 60 instead of a 120 the phone cannot
+      // hold (90 Hz and 60 Hz draw every frame).
+      if (nanos - lastFrame in 1 until 10_000_000L) wake() else if (drawFrame(nanos)) wake()
     }
 
   fun setFlat(flat: Boolean) {
     post {
       if (calm) morph.finish(flat) else morph.aim(flat, System.nanoTime())
-      // A meteor or a bolt only ever strikes the city, never the code.
+      // A meteor, a bolt or fireworks only ever happen over the city, never the code.
       if (flat) {
         meteorAt = -1f
         damageAt = -1f
+        fireworks.clear()
       }
       wake()
     }
@@ -315,17 +349,101 @@ internal class CityRenderer(
   }
 
   /**
-   * What of the sky lies under ([u], [v]) on screen, 0..1 from the top left, as the last frame drew
-   * it: a cloud, the sun or the moon, or null for none (or for the flat code). [onResult] runs on
-   * the main thread.
+   * A long press at ([u], [v]) on screen, 0..1 from the top left, with fireworks chosen: three
+   * shells go up from the ground there and burst above the skyline; a press on the sky bursts
+   * them right there. Ignored when flat or with animations off.
    */
-  fun pick(u: Float, v: Float, onResult: (SkyPart?) -> Unit) {
-    val posted = post {
-      val pose = lastPose
-      val found = if (pose == null || morph.heading > 0f) null else SkyParts.pick(traffic, pickable, pose.eye, pose.ray(u, v))
-      main.post { onResult(found) }
+  fun fireworks(u: Float, v: Float) {
+    post {
+      val city = city ?: return@post
+      val pose = lastPose ?: return@post
+      if (calm || morph.heading > 0f) return@post
+      val reach = city.modules / 2f - 0.5f
+      val hit = pose.ground(u, v)
+      val bx: Float
+      val by: Float
+      val bz: Float
+      if (hit != null) {
+        bx = hit[0].coerceIn(-reach, reach)
+        bz = hit[2].coerceIn(-reach, reach)
+        by = max(city.maxHeight * 0.7f, 7f) + 2f
+      } else {
+        // On the sky: where the ray crosses the upright plane through the city's middle, square to the camera.
+        val dir = pose.ray(u, v)
+        val along = dir[0] * pose.fwd[0] + dir[2] * pose.fwd[2]
+        val t = if (along > 1e-3f) -(pose.eye[0] * pose.fwd[0] + pose.eye[2] * pose.fwd[2]) / along else 30f
+        val edge = city.plateHalf + 2f
+        bx = (pose.eye[0] + dir[0] * t).coerceIn(-edge, edge)
+        by = (pose.eye[1] + dir[1] * t).coerceIn(5f, city.maxHeight + 14f)
+        bz = (pose.eye[2] + dir[2] * t).coerceIn(-edge, edge)
+      }
+      fireworks.volley(seconds, bx.coerceIn(-reach, reach), bz.coerceIn(-reach, reach), bx, by, bz, presses++)
+      wake()
     }
-    if (!posted) main.post { onResult(null) }
+  }
+
+  /**
+   * Starts the tour: once the city stands (a folded code unfolds first), the renderer's clock
+   * restarts so it is the same every time, the sky turns clear, by day or by night as the sun is,
+   * and the camera flies [Tour] (its shot list is render/tour/TourScript.kt). [onEnd] runs on the main thread when it lands (true) or is
+   * stopped or replaced (false).
+   */
+  fun startTour(onEnd: (completed: Boolean) -> Unit) {
+    post {
+      if (lapseAt >= 0f) endTimelapse(completed = false)
+      tourEnd?.let { old -> main.post { old(false) } }
+      tourEnd = onEnd
+      tour = null
+      tourPending = true
+      wake()
+    }
+  }
+
+  /** Stops the tour, if one is on its way or flying: the camera eases back to the city's own view. */
+  fun stopTour() {
+    post {
+      if (tour != null || tourPending) endTour(completed = false)
+      wake()
+    }
+  }
+
+  /**
+   * Starts the timelapse ([Timelapse]): the clock runs from the middle of the day to night in
+   * fifteen seconds, under the person's weather, wherever the camera is. The sky eases into it
+   * from the hour shown, as a change of hour does. At the end the renderer stays at Night; [onEnd]
+   * runs on the main thread when it gets there (true) or is stopped or replaced (false), when the
+   * city eases back to its own hour.
+   */
+  fun startTimelapse(onEnd: (completed: Boolean) -> Unit) {
+    post {
+      if (tour != null || tourPending) endTour(completed = false)
+      lapseEnd?.let { old -> main.post { old(false) } }
+      lapseEnd = onEnd
+      lapseAt = seconds
+      wake()
+    }
+  }
+
+  /** Stops the timelapse, if one runs: the sky eases back to the hour the person chose. */
+  fun stopTimelapse() {
+    post {
+      if (lapseAt >= 0f) endTimelapse(completed = false)
+      wake()
+    }
+  }
+
+  /** Ends a timelapse that has run its length. */
+  private fun timelapse() {
+    if (lapseAt >= 0f && seconds - lapseAt >= Timelapse.LENGTH) endTimelapse(completed = true)
+  }
+
+  private fun endTimelapse(completed: Boolean) {
+    lapseAt = -1f
+    // It ends exactly on Night's sky, so hold it there; the app follows by choosing Night.
+    if (completed) time = TimeOfDay.NIGHT
+    val done = lapseEnd
+    lapseEnd = null
+    main.post { done?.invoke(completed) }
   }
 
   /** Starts drawing into [androidSurface]. */
@@ -510,13 +628,15 @@ internal class CityRenderer(
    * moon over Kuala Lumpur, so it is refreshed every second.
    */
   private fun targetAtmosphere(nanos: Long): Atmosphere {
-    val key = time to weather
+    val key = sky()
+    // The timelapse's clock moves every frame, on the fixed hours' sun and moon.
+    val hour = key.first ?: return Atmospheres.at(TimeOfDay.AUTO, key.second, Timelapse.minute(seconds - lapseAt))
     val cached = target
     if (cached != null && key == atmosphereFor && (key.first != TimeOfDay.AUTO || nanos - atmosphereAt < 1_000_000_000L)) {
       return cached
     }
     val now = System.currentTimeMillis()
-    return Atmospheres.at(key.first, key.second, Atmospheres.clockMinute(now), nowMillis = now).also {
+    return Atmospheres.at(hour, key.second, Atmospheres.clockMinute(now), nowMillis = now).also {
       target = it
       atmosphereFor = key
       atmosphereAt = nanos
@@ -524,14 +644,21 @@ internal class CityRenderer(
   }
 
   /**
+   * The hour and weather shown: the person's, the tour's clear day or night, or, with no hour,
+   * the timelapse's moving clock under the person's weather.
+   */
+  private fun sky(): Pair<TimeOfDay?, Weather> = tourSky ?: ((if (lapseAt >= 0f) null else time) to weather)
+
+  /**
    * The light and the air as shown (2026-11-07): a change of hour eases in over [TIME_EASE]
    * seconds, a change of weather over [WEATHER_EASE] in stages. Into rain or a storm the sky darkens
    * first, the rain begins once the clouds are mostly in and the lightning last; out of it the rain
    * and lightning stop first and the sky clears after. With animations off it changes at once.
    */
+
   private fun atmosphere(nanos: Long): Atmosphere {
     val goal = targetAtmosphere(nanos)
-    val key = time to weather
+    val key = sky()
     val before = shownFor
     if (before == null || calm) {
       shownFor = key
@@ -577,6 +704,7 @@ internal class CityRenderer(
    * of it.
    */
   private fun weatherSky(dt: Float) {
+    val weather = sky().second
     val fairWanted = clouds && weather == Weather.CLEAR
     val deckWanted = clouds && (weather == Weather.STORM || weather == Weather.RAIN)
     val shine = if (weather == Weather.CLEAR || weather == Weather.HAZE) 1f else 0f
@@ -613,6 +741,8 @@ internal class CityRenderer(
       val dt = min(0.05f, (nanos - lastFrame) / 1e9f)
       seconds += dt
       lastFrame = nanos
+      beginTour(nanos, city)
+      timelapse()
 
       val shot = snapshotRequest
       if (shot != null && snapshotFlat) morph.finish(flat = true)
@@ -650,8 +780,9 @@ internal class CityRenderer(
       // The ground shakes for half a second after the impact.
       val shake = if (impact in 0f..0.6f) exp(-impact * 6f) else 0f
       val shaken = View(shown.yaw + 0.02f * shake * sin(impact * 63f), shown.elevation + 0.015f * shake * cos(impact * 47f), shown.zoom)
-      val pose = Camera.pose(current, width.toFloat() / height, swing, seconds, shaken)
+      val pose = tourPose(current, Camera.pose(current, width.toFloat() / height, swing, seconds, shaken))
       lastPose = pose
+      festivities(current, fold)
       writeFrame(queue, resources, pose, Camera.light(current, air.sunDir), fold, current, air, impact)
       val moving = writeTraffic(queue, resources, current, fold, impact)
       val drops = (MAX_DROPS * air.rain * (if (calm) 0.4f else 1f) * (1f - fold)).toInt()
@@ -687,6 +818,106 @@ internal class CityRenderer(
       failNow(e)
       return false
     }
+  }
+
+  /**
+   * Starts a tour that is waiting, once the city stands still: the clock back to 0, anything
+   * falling or burning cleared, the sky clear by day or night as the person's sky is now, and the
+   * weather's shapes in place at once.
+   */
+  private fun beginTour(nanos: Long, city: City?) {
+    if (!tourPending || city == null || morph.heading != 0f || !morph.settled(nanos)) return
+    tourPending = false
+    val night = targetAtmosphere(nanos).night > 0.5f
+    seconds = 0f
+    nextShell = 0f
+    meteorAt = -1f
+    landed = false
+    damageAt = -1f
+    lastStrike = -1
+    boltAimed = false
+    fireworks.clear()
+    tourSky = (if (night) TimeOfDay.NIGHT else TimeOfDay.DAY) to Weather.CLEAR
+    shownFor = null
+    skyStarted = false
+    hazeFront = 1f
+    shown = View()
+    leftTour = null
+    enteredFrom = lastPose
+    tour = Tour(city, width.toFloat() / height)
+  }
+
+  private fun endTour(completed: Boolean) {
+    val flying = tour != null
+    tour = null
+    tourPending = false
+    tourSky = null
+    if (completed || !flying) leftTour = null else leftAt = seconds
+    val done = tourEnd
+    tourEnd = null
+    main.post { done?.invoke(completed) }
+  }
+
+  /** The camera: the tour's while one flies, easing back from where a stopped one left off, else the city's own ([own]). */
+  private fun tourPose(city: City?, own: Pose): Pose {
+    val flying = tour
+    if (flying != null) {
+      if (seconds >= flying.length) {
+        endTour(completed = true)
+        return own
+      }
+      val path = flying.pose(seconds)
+      val from = enteredFrom
+      val blended = if (from == null || seconds >= ENTER) path else between(from, path, smooth(seconds / ENTER), city)
+      if (seconds >= ENTER) enteredFrom = null
+      return blended.also { leftTour = it }
+    }
+    val left = leftTour ?: return own
+    val k = (seconds - leftAt) / LEAVE
+    if (k >= 1f || city == null) {
+      leftTour = null
+      return own
+    }
+    return between(left, own, smooth(k), city)
+  }
+
+  /** A camera [e] of the way from [a] to [b]: where each stands, and where each looks, half a plate ahead. */
+  private fun between(a: Pose, b: Pose, e: Float, city: City?): Pose {
+    fun mix(p: FloatArray, q: FloatArray) = FloatArray(3) { p[it] + (q[it] - p[it]) * e }
+    val reach = if (city == null) 12f else city.plateHalf
+    val from = FloatArray(3) { a.eye[it] + a.fwd[it] * reach }
+    val to = FloatArray(3) { b.eye[it] + b.fwd[it] * reach }
+    return Camera.look(mix(a.eye, b.eye), mix(from, to), b.aspect, a.shiftY + (b.shiftY - a.shiftY) * e)
+  }
+
+  /**
+   * Kuala Lumpur's big nights in Now ([Festivals]): shells go up from the landmarks' tops and the
+   * square, one every three quarters of a second, five times as often in the midnight finale.
+   */
+  private fun festivities(city: City?, fold: Float) {
+    if (calm || city?.landmarks == null || tour != null || time != TimeOfDay.AUTO || fold > 0.5f) return
+    val nowNanos = System.nanoTime()
+    if (festivalAt == 0L || nowNanos - festivalAt > 1_000_000_000L) {
+      festival = Festivals.at(System.currentTimeMillis())
+      festivalAt = nowNanos
+    }
+    if (festival == Festivals.NONE || seconds < nextShell) return
+    if (sitesFor !== city) {
+      sites = launchSites(city)
+      sitesFor = city
+    }
+    if (sites.isEmpty()) return
+    val finale = festival == Festivals.FINALE
+    val k = shells++
+    val site = k % (sites.size / 3)
+    val from = floatArrayOf(sites[site * 3], sites[site * 3 + 1], sites[site * 3 + 2])
+    val burst = floatArrayOf(
+      from[0] + (unit(k * 7 + 1) - 0.5f) * 5f,
+      max(from[1], city.maxHeight * 0.55f) + 3f + 4f * unit(k * 7 + 2),
+      from[2] + (unit(k * 7 + 3) - 0.5f) * 5f,
+    )
+    fireworks.launch(seconds, from, burst, k + 1000, if (finale) 1.3f else 1f)
+    nextShell = seconds + if (finale) 0.16f else 0.75f
   }
 
   private fun encode(
@@ -757,6 +988,11 @@ internal class CityRenderer(
           if (city != null && instances != null) {
             pass.setPipeline(pipelines.blocks)
             drawBlocks(pass, resources, instances, city.count, moving)
+            if (moving > 0 && fold < 0.999f) {
+              // The clouds, soft and blended over all that: their puffs are among the traffic's boxes.
+              pass.setPipeline(pipelines.clouds)
+              pass.drawIndexed(FrameData.CUBE_INDICES.size, moving)
+            }
           }
           if (drops > 0) {
             pass.setPipeline(pipelines.rain)
@@ -972,6 +1208,7 @@ internal class CityRenderer(
       damage = floatArrayOf(damageX, damageZ, damageSeconds(), 0f),
       bolt = floatArrayOf(boltX, boltZ, boltTop, if (boltAimed && flash > 0f) 1f else 0f),
       screen = screen.also { board.state(seconds, calm, it) },
+      stars = FrameData.stars(city, air, height),
     )
     val f = frame
     frameBytes.asFloatBuffer().put(f)
@@ -1002,7 +1239,6 @@ internal class CityRenderer(
    */
   private fun writeTraffic(queue: GPUQueue, resources: Resources, city: City?, fold: Float, impact: Float): Int {
     val shrink = 1f - fold
-    pickable = 0
     if (city == null || shrink < 0.05f || city.movers.isEmpty()) return 0
 
     var count = 0
@@ -1047,10 +1283,15 @@ internal class CityRenderer(
     if (damage >= 0f) fragmentParts(box, damage)
     val air = atmosphere
     if (air != null) SkyParts.emit(box, city, seconds, calm, shapes, air, lit = if (boltAimed) boltCloud else -1, flash = flash)
-    pickable = count
+    city.fountain?.let { Fountain.emit(box, it, if (calm) 0f else seconds) }
+    fireworks.emit(box, seconds)
     if (count == 0) return 0
-    trafficBytes.asFloatBuffer().put(traffic)
-    queue.writeBuffer(resources.traffic, 0, trafficBytes)
+    // Only the boxes in use, not the whole 98 KB buffer.
+    val floats = count * CityPlanner.STRIDE
+    trafficBytes.asFloatBuffer().put(traffic, 0, floats)
+    val used = trafficBytes.duplicate()
+    used.limit(floats * 4)
+    queue.writeBuffer(resources.traffic, 0, used.slice())
     return count
   }
 
@@ -1286,6 +1527,7 @@ internal class CityRenderer(
     val blocks: GPURenderPipeline,
     val caster: GPURenderPipeline,
     val sky: GPURenderPipeline,
+    val clouds: GPURenderPipeline,
     val rain: GPURenderPipeline,
     val prefilter: GPURenderPipeline,
     val down: GPURenderPipeline,
@@ -1293,7 +1535,7 @@ internal class CityRenderer(
     val composite: GPURenderPipeline,
   ) : AutoCloseable {
     override fun close() {
-      for (pipeline in listOf(blocks, caster, sky, rain, prefilter, down, up, composite)) pipeline.close()
+      for (pipeline in listOf(blocks, caster, sky, clouds, rain, prefilter, down, up, composite)) pipeline.close()
     }
   }
 
@@ -1359,8 +1601,12 @@ internal class CityRenderer(
 
   companion object {
     private const val TAG = "SkylineQR"
-    /** Boxes for everything that moves: vehicles and their parts, the meteor and its fireball. */
-    private const val MAX_PARTS = 768
+    /** Boxes for everything that moves: vehicles and their parts, the weather, the meteor, fireworks and the fountain's water. */
+    private const val MAX_PARTS = 2048
+
+    /** How long the camera takes to ease back from a stopped tour, and into one from where it was. */
+    private const val LEAVE = 0.7f
+    private const val ENTER = 0.5f
 
     /** How long a change of hour, and of weather, takes to ease in. */
     private const val TIME_EASE = 1.5f
@@ -1432,6 +1678,18 @@ internal class CityRenderer(
     private const val SPELL = 3.4f
 
     private fun strikeTime(spell: Int) = spell * SPELL + 0.2f + unit(spell * 2 + 2) * (SPELL - 1.0f)
+
+    /** Where the big nights' fireworks go up from, x, top and z each: the landmarks' tops and the square. */
+    internal fun launchSites(city: City): FloatArray {
+      val plan = city.landmarks ?: return FloatArray(0)
+      val n = city.modules
+      val half = n / 2f
+      val out = ArrayList<Float>()
+      fun site(x: Float, top: Float, z: Float) = out.addAll(listOf(x, top, z))
+      for (f in plan.all) site(f.centerX - half, plan.height(f, n), f.centerZ - half)
+      site(3.5f - half, 0.2f, n - 3.5f - half)
+      return out.toFloatArray()
+    }
 
     /** The roofs of the tallest towers, x, z and height each: where lightning comes down. */
     internal fun lightningRods(city: City): FloatArray {
@@ -1506,6 +1764,7 @@ internal class CityRenderer(
             )
           )
         val sky = pipeline("sky", GPUVertexState(module, "skyVertex"), "skyFragment", depth(write = false, compare = CompareFunction.Always))
+        val clouds = pipeline("clouds", blockVertexState(module, "cloudVertex"), "cloudFragment", depth(write = false, compare = CompareFunction.LessEqual), alpha)
         val rain = pipeline("rain", GPUVertexState(module, "rainVertex"), "rainFragment", depth(write = false, compare = CompareFunction.LessEqual), alpha)
         val additive = GPUBlendState(
           color = GPUBlendComponent(BlendOperation.Add, BlendFactor.One, BlendFactor.One),
@@ -1526,7 +1785,7 @@ internal class CityRenderer(
         val composite = screen("composite", "composite", format)
         // Throws with the WGSL compiler's message if anything above was invalid.
         device.popErrorScope()
-        return Pipelines(blocks, caster, sky, rain, prefilter, down, up, composite)
+        return Pipelines(blocks, caster, sky, clouds, rain, prefilter, down, up, composite)
       } finally {
         module.close()
         postModule.close()

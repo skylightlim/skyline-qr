@@ -44,38 +44,62 @@ class SignalsTest {
   @Test
   fun lightsStandAtRealJunctionsSpreadOutAndClearOfTheCorners() {
     var total = 0
+    var edges = 0
+    var crossings = 0
     for (city in cities) {
       val n = city.modules
       val signals = city.signals
       val cells = signals.cells
-      assertTrue(signals.offsets.size <= Signals.MAX_JUNCTIONS)
       total += signals.offsets.size
+      var inside = 0
       for (j in signals.offsets.indices) {
         val col = cells[j * 2]
         val row = cells[j * 2 + 1]
-        assertTrue("junction ($col, $row) is a street", !city.qr.isDark(col, row))
-        assertTrue("junction ($col, $row) is in a corner", !LandmarkPlan.inCorner(col, row, n))
+        when {
+          // Kuala Lumpur's crossing, on the alignment pattern in the bottom right corner zone.
+          j == signals.crossing -> {
+            crossings++
+            inside++
+            assertEquals(Corners.alignment(city.qr), row * n + col)
+          }
+          // Out on the ring road, along the bottom or the right edge.
+          col == n || row == n -> {
+            edges++
+            assertTrue("edge junction ($col, $row)", col in 0 until n || row in 0 until n)
+          }
+          else -> {
+            inside++
+            assertTrue("junction ($col, $row) is a street", !city.qr.isDark(col, row))
+            assertTrue("junction ($col, $row) is in a corner", !LandmarkPlan.inCorner(col, row, n))
+          }
+        }
         for (k in 0 until j) assertTrue(hypot((col - cells[k * 2]).toFloat(), (row - cells[k * 2 + 1]).toFloat()) >= 4f)
       }
+      assertTrue(inside <= Signals.MAX_JUNCTIONS)
       for (h in 0 until signals.count) {
         val o = h * Signals.HEAD
-        // The pole stands on its own junction's module.
+        // The pole stands on one of its own junction's modules.
         val j = signals.heads[o + 4].toInt()
-        assertEquals(cells[j * 2], floor(signals.heads[o] + n / 2f).toInt())
-        assertEquals(cells[j * 2 + 1], floor(signals.heads[o + 1] + n / 2f).toInt())
+        val col = floor(signals.heads[o] + n / 2f).toInt()
+        val row = floor(signals.heads[o + 1] + n / 2f).toInt()
+        val own = (col == cells[j * 2] && row == cells[j * 2 + 1]) ||
+          (0 until signals.areas.size / 3).any { signals.areas[it * 3] == col && signals.areas[it * 3 + 1] == row && signals.areas[it * 3 + 2] == j }
+        assertTrue("a pole of junction $j stands on ($col, $row)", own)
       }
       // The same link always gets the same lights.
       val again = plan(city.identity.link.payload, city.preset).signals
       assertTrue(signals.heads.contentEquals(again.heads) && signals.offsets.contentEquals(again.offsets))
     }
     assertTrue("only $total junctions with lights in ${cities.size} cities", total >= cities.size)
+    assertTrue("no lights on the ring road's near edges", edges > 0)
+    assertTrue("no crossing on an alignment pattern", crossings > 0)
   }
 
   @Test
   fun carsStopAtRedAndNeverJumpOrReverse() {
     var waits = 0
     for (city in cities) {
-      for (car in city.movers.filter { it.kind == Mover.CAR && it.stops.isNotEmpty() }) {
+      for (car in city.movers.filter { (it.kind == Mover.CAR || it.kind == Mover.BUS) && it.stops.isNotEmpty() }) {
         val length = car.route.length
         var last = car.distance(0f)
         var t = 0.05f

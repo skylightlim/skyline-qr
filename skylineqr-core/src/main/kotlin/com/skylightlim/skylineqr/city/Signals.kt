@@ -6,6 +6,11 @@ package com.skylightlim.skylineqr.city
  * left) of every approach a car uses. A junction lets one axis go at a time: green, amber, a moment
  * of all red, then the other axis. Each junction starts its cycle at a seeded point, so the same
  * link always has the same lights, and the cars stop for them (see [Mover]).
+ *
+ * Since 2026-11-09, at the user's request, Kuala Lumpur's crossing is a junction of its own on the
+ * code's alignment pattern ([crossing]), larger than one module ([areas]), and up to [MAX_EDGE]
+ * more stand on each of the two edges nearest the camera, where streets meet the ring road; the
+ * bus stops for those.
  */
 class Signals(
   /**
@@ -15,8 +20,15 @@ class Signals(
   val heads: FloatArray,
   /** Per junction: how many seconds into its cycle it is at time 0. */
   val offsets: FloatArray,
-  /** Per junction: its module's column and row. */
+  /** Per junction: its module's column and row; -1 or the code's size for one on the ring road. */
   val cells: IntArray,
+  /**
+   * Further modules that belong to a junction, three ints each: column, row and junction. A car
+   * stops where it enters a junction's modules, never between them.
+   */
+  val areas: IntArray = IntArray(0),
+  /** The junction that is the crossing on the alignment pattern, or -1. */
+  val crossing: Int = -1,
 ) {
   val count: Int
     get() = heads.size / HEAD
@@ -47,7 +59,11 @@ class Signals(
     const val AMBER = 1
     const val GREEN = 2
 
+    /** Junctions with lights inside the code, the crossing among them. */
     const val MAX_JUNCTIONS = 6
+
+    /** Junctions with lights on each edge of the ring road nearest the camera (the bottom and the right). */
+    const val MAX_EDGE = 3
     const val GREEN_SECONDS = 3.0f
     const val AMBER_SECONDS = 0.8f
     const val ALL_RED_SECONDS = 0.6f
@@ -90,9 +106,39 @@ internal class Schedule(
   private var searchFrom: Float
 
   init {
-    add(0f, start, CRUISE)
-    searchFrom = start + BRAKE
+    // A line closer ahead than a braking distance cannot be braked for from full speed. If its
+    // light will not be green by the time the car gets there, the car starts out waiting at it.
+    val (first, k) = nextLine(start)
+    val arrive = (first - start) / speed
+    val junction = if (stops.isEmpty()) 0 else stops[k * 3 + 1].toInt()
+    val axis = if (stops.isEmpty()) 0 else stops[k * 3 + 2].toInt()
+    if (stops.isNotEmpty() && first - start < BRAKE && signals.state(junction, axis, arrive) != Signals.GREEN) {
+      val go = signals.nextGreen(junction, axis, arrive)
+      add(0f, first, WAITING)
+      add(go, first, GOING)
+      add(go + 2f * BRAKE / speed, first + BRAKE, CRUISE)
+      searchFrom = first + 2f * BRAKE
+    } else {
+      add(0f, start, CRUISE)
+      searchFrom = start + BRAKE
+    }
     plan()
+  }
+
+  /** The first stop line at or past [from], and which it is. */
+  private fun nextLine(from: Float): Pair<Float, Int> {
+    val length = route.length
+    var best = Float.MAX_VALUE
+    var bestIndex = 0
+    for (k in 0 until stops.size / 3) {
+      var s = stops[k * 3] + kotlin.math.floor((from - stops[k * 3]) / length) * length
+      if (s < from) s += length
+      if (s < best) {
+        best = s
+        bestIndex = k
+      }
+    }
+    return best to bestIndex
   }
 
   fun distance(time: Float): Float {
@@ -116,18 +162,7 @@ internal class Schedule(
 
   /** The next stop line past [searchFrom], and when the car would start braking for it. */
   private fun plan() {
-    val length = route.length
-    var best = Float.MAX_VALUE
-    var bestIndex = 0
-    for (k in 0 until stops.size / 3) {
-      // The first time this line comes round past searchFrom.
-      var s = stops[k * 3] + kotlin.math.floor((searchFrom - stops[k * 3]) / length) * length
-      if (s < searchFrom) s += length
-      if (s < best) {
-        best = s
-        bestIndex = k
-      }
-    }
+    val (best, bestIndex) = nextLine(searchFrom)
     line = best
     lineIndex = bestIndex
     decideAt = times[size - 1] + (line - BRAKE - places[size - 1]) / speed

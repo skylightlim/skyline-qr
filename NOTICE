@@ -42,10 +42,12 @@ Icons (app/src/main/kotlin/com/skylightlim/skylineqr/ui/Icons.kt)
 ------------------------------------------------------------------------------
 
 The app's icons are path data from Lucide 0.460 (https://lucide.dev): sun,
-cloud-rain, haze, cloud-lightning, share, chevron-down, rotate-ccw and check
-for the city's panel, and trash-2 for its card picker; nfc, smartphone-nfc,
-scan-line, plus, eye, eye-off and triangle-alert for the card popup and tap to
-share. Lucide is distributed under
+cloud-rain, haze, cloud-lightning, chevron-down, rotate-ccw and check for the
+city's panel, and trash-2 for its card picker; nfc, smartphone-nfc, scan-line,
+plus, eye, eye-off and triangle-alert for the card popup and tap to share;
+plane, sunset, cloud, monitor, scroll-text, chevron-right and arrow-left for the
+settings card, plane also for the home screen's Tour shortcut
+(app/src/main/res/drawable/ic_shortcut_tour.xml). Lucide is distributed under
 this licence:
 
   ISC License
@@ -65,6 +67,16 @@ this licence:
   RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF
   CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
   CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+------------------------------------------------------------------------------
+Flag of Kuala Lumpur (skylineqr-core/.../city/Vehicles.kt)
+------------------------------------------------------------------------------
+
+The banner the plane tows is drawn after "Flag of Kuala Lumpur, Malaysia.svg"
+on Wikimedia Commons
+(https://commons.wikimedia.org/wiki/File:Flag_of_Kuala_Lumpur,_Malaysia.svg),
+which is in the public domain. Only its proportions and colours are used; no
+file from it is included.
 
 ------------------------------------------------------------------------------
 Tap to share (skylineqr-nfc)
