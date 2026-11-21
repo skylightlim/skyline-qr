@@ -22,7 +22,7 @@ import kotlin.math.hypot
 import kotlin.math.ln
 
 /**
- * The website (2026-11-21): the demo app's screen in a browser. A link box, the city, and the
+ * The website (2026-11-21): the demo app's screen in a browser. The city, a link box below it, and the
  * app's controls: Now, Day or Night; Clear, Storm or Haze; the tour, the timelapse, what a long
  * press does, the clouds and the sign board. Tap to fold the city into its code and back; drag to
  * turn it, pinch or scroll to zoom, long-press for a meteor or fireworks. Where WebGPU cannot run,
@@ -70,7 +70,6 @@ private class Page {
       renderer.clouds = !renderer.clouds
       Dom.setPressed("clouds", renderer.clouds)
     }
-    Dom.onClick("fold") { toggle() }
     Dom.onClick("tour") { startTour() }
     Dom.onClick("timelapse") { startTimelapse() }
     Dom.onClick("reset") { resetCamera() }
@@ -78,7 +77,6 @@ private class Page {
       stopTour()
       stopTimelapse()
     }
-    Dom.onClick("save") { saveCode() }
     Dom.onInput("signs-input") {
       signs = Dom.value("signs-input").split('\n')
       renderer.billboard = signs
@@ -112,7 +110,6 @@ private class Page {
         "error",
         if (identity.link.hasSensitiveQuery) "This link looks like it carries a token or password. Think twice before sharing its code." else "",
       )
-      Dom.setText("payload", identity.link.payload)
       drawFallback()
     } catch (e: SkylineQrException) {
       // The last good city stays on screen meanwhile.
@@ -168,8 +165,6 @@ private class Page {
   private fun setFlat(value: Boolean) {
     flat = value
     renderer.setFlat(value)
-    Dom.setPressed("fold", value)
-    Dom.setText("fold", if (value) "Show the city" else "Show the code")
     Dom.setLabel("stage", if (value) "QR code for $link. Tap to show the city." else "City QR code for $link. Tap to show the code.")
   }
 
@@ -225,7 +220,6 @@ private class Page {
     Dom.setHidden("reset", busy || view == View() || fallback)
     Dom.setHidden("city-only", fallback)
     Dom.setHidden("city-settings", fallback)
-    Dom.setHidden("fold", fallback)
   }
 
   // The camera: the app's drag, pinch, momentum and soft limits.
@@ -401,7 +395,7 @@ private class Page {
     if (event == SkylineEvent.METEOR_IMPACT) Dom.vibrate(intArrayOf(70, 50, 60, 70, 40))
   }
 
-  // The canvas, the fallback and the saved code.
+  // The canvas and the fallback.
 
   private fun resize() {
     val (w, h) = Dom.canvasSize("city")
@@ -426,22 +420,11 @@ private class Page {
   private fun drawFallback() {
     if (!fallback) return
     val city = city ?: return
-    drawCode(city, "flat", 0)
-  }
-
-  private fun drawCode(city: City, canvas: String, modulePx: Int) {
     val air = air()
     val n = city.modules
     Dom.codeBegin(n, css(FlatColours.paper(air)))
     for (row in 0 until n) for (col in 0 until n) Dom.codeModule(col, row, css(FlatColours.module(city, col, row, air)))
-    Dom.codeDraw(canvas, QUIET, modulePx)
-  }
-
-  private fun saveCode() {
-    val city = city ?: return
-    drawCode(city, "", 16)
-    val name = city.identity.link.displayHost.map { if (it.isLetterOrDigit() || it == '.' || it == '-') it else '-' }.joinToString("")
-    Dom.download("skyline-qr-${name.take(40)}.png")
+    Dom.codeDraw("flat", QUIET)
   }
 
   private companion object {

@@ -558,9 +558,11 @@ Added 2026-11-21, at the user's request ("make this app into a website").
   `WebRenderer` is `CityRenderer` with the browser's plumbing (one thread, requestAnimationFrame)
   and gpu.js builds the same passes with the browser's WebGPU; a change to what CityRenderer draws
   or when belongs in both.
-- The page: a link box, the city full screen, Now, Day or Night, Clear, Storm or Haze, the code,
-  the tour, the timelapse, and under More what a long press does, the clouds, the sign board and
-  saving the code as an image. No share links, as in the app. Without WebGPU, the flat code on a
+- The page: the city full screen with the link box at the bottom, Now, Day or Night, Clear, Storm
+  or Haze, the tour, the timelapse, and under More what a long press does and the clouds on one
+  row, then the sign board. Tapping the city folds it into its code; there is no code button, no
+  saved image and no line showing the encoded link (2026-11-21, at the user's request). No share
+  links, as in the app. Without WebGPU, the flat code on a
   2D canvas in the flat city's colours (`FlatColours`), with a note. No tap to share: browsers
   can't emulate an NFC tag.
 
