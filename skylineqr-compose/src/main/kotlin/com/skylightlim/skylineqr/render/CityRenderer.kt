@@ -211,6 +211,8 @@ internal class CityRenderer(
   private var queue: GPUQueue? = null
   private var resources: Resources? = null
   private var pipelinesJob: Deferred<Pipelines>? = null
+  /** The surface format [pipelinesJob] builds for. */
+  private var pipelinesFormat = TextureFormat.Undefined
   private var pipelines: Pipelines? = null
   private var wanted: Surface? = null
   private var surface: GPUSurface? = null
@@ -319,6 +321,27 @@ internal class CityRenderer(
       // hold (90 Hz and 60 Hz draw every frame).
       if (nanos - lastFrame in 1 until 10_000_000L) wake() else if (drawFrame(nanos)) wake()
     }
+
+  init {
+    // Last, after every field above: the render thread runs this as soon as it can.
+    post { warmUp() }
+  }
+
+  /**
+   * Starts the device and builds the pipelines for the usual surface format as soon as the
+   * renderer exists (2026-11-21), while the screen is laid out, the surface made and the city
+   * planned, instead of only once the surface arrives: compiling the shaders is most of the wait
+   * before the first frame. [connect] builds them again only for a surface that wants another
+   * format.
+   */
+  private fun warmUp() {
+    if (failed) return
+    val starting = gpuJob ?: scope.async { startGpu() }.also { gpuJob = it }
+    if (pipelinesJob != null) return
+    val usual = PREFERRED_FORMATS[0]
+    pipelinesFormat = usual
+    pipelinesJob = scope.async { buildPipelines(starting.await().device, resources!!, usual) }
+  }
 
   fun setFlat(flat: Boolean) {
     post {
@@ -536,9 +559,15 @@ internal class CityRenderer(
         if (CompositeAlphaMode.Opaque in capabilities.alphaModes) CompositeAlphaMode.Opaque
         else CompositeAlphaMode.Auto
       configure()
-      // The surface format is only known now, and the pipelines are built for it, once.
+      // The pipelines are built for the surface's format, once: warmUp started them for the usual
+      // one, so only a surface that wants another builds them again.
       val resources = resources!!
-      val job = pipelinesJob ?: scope.async { buildPipelines(gpu.device, resources, format) }.also { pipelinesJob = it }
+      val job =
+        pipelinesJob?.takeIf { pipelinesFormat == format }
+          ?: scope.async { buildPipelines(gpu.device, resources, format) }.also {
+            pipelinesJob = it
+            pipelinesFormat = format
+          }
       pipelines = job.await()
       if (wanted === androidSurface) wake()
     } catch (e: CancellationException) {
