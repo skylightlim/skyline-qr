@@ -2,6 +2,7 @@ package com.skylightlim.skylineqr.render
 
 import com.skylightlim.skylineqr.city.Atmosphere
 import com.skylightlim.skylineqr.city.Atmospheres
+import com.skylightlim.skylineqr.city.clockMinute
 import com.skylightlim.skylineqr.city.CityPlanner
 import com.skylightlim.skylineqr.city.CityPreset
 import com.skylightlim.skylineqr.city.TimeOfDay

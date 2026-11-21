@@ -14,8 +14,14 @@ DAWN AND TINT (the WebGPU engine inside androidx.webgpu)
 ANDROIDX: Jetpack Compose, Activity, Core, Lifecycle, WebGPU, CameraX
   Copyright The Android Open Source Project. Apache License 2.0 (below).
 
-ZXING (QR encoding)
+ZXING (the QR encoder, adapted into Kotlin)
   Copyright ZXing authors. Apache License 2.0 (below).
+
+FDLIBM (the city planner's sines and powers, adapted into Kotlin)
+  Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.
+  Developed at SunSoft, a Sun Microsystems, Inc. business.
+  Permission to use, copy, modify, and distribute this software is freely
+  granted, provided that this notice is preserved.
 
 KOTLIN, KOTLINX.COROUTINES AND KOTLINX.SERIALIZATION
   Copyright JetBrains s.r.o. and contributors. Apache License 2.0 (below).

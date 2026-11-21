@@ -32,6 +32,7 @@ The app needs Android 8.0+ and a phone with Vulkan.
 | `skylineqr-compose` | The renderer and the `SkylineQrCode` composable. Brings the core along. |
 | `skylineqr-nfc` | Tap to share: the phone as an NFC tag carrying a saved card, tag reading and writing, and a QR scanner. See [docs/NFC.md](docs/NFC.md). |
 | `app` | The demo app. |
+| `skylineqr-web` | The website: the demo in a browser, with Kotlin/Wasm and WebGPU. |
 
 ```kotlin
 SkylineQrCode(
@@ -60,10 +61,24 @@ each QR still points at its own page; pass `identityScope = IdentityScope.URL` t
 its own. A city you save should record `GeneratorVersion.CURRENT` and pass it back as
 `generatorVersion`, so it never changes when the generator improves.
 
+## Website
+
+`skylineqr-web` is the demo in a browser: the same link box, city, sky, weather, tour and
+timelapse, published on GitHub Pages by `.github/workflows/pages.yml`. It is Kotlin/Wasm, so the
+core plans exactly the city the phone does (`CrossPlatformCityTest` checks it on the JVM and on
+Wasm), and the renderer draws it with the browser's WebGPU and the app's own WGSL. Browsers without
+WebGPU get the flat code on a 2D canvas, which still scans. Tap to share stays in the app: browsers
+can't act as an NFC tag.
+
+```bash
+./gradlew :skylineqr-web:wasmJsBrowserDevelopmentRun   # a dev server with the site
+./gradlew :skylineqr-web:wasmJsBrowserDistribution     # the site, in skylineqr-web/build/dist/wasmJs/productionExecutable
+```
+
 ## Building
 
 ```bash
-./gradlew test assembleDebug
+./gradlew test allTests assembleDebug
 ./gradlew :skylineqr-compose:connectedDebugAndroidTest   # on a connected phone
 ```
 

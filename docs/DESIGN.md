@@ -540,6 +540,30 @@ with no server involved.
   new card.
 - The default link is the user's Instagram, `https://www.instagram.com/chenyuulim/` (2026-11-06).
 
+## Website
+
+Added 2026-11-21, at the user's request ("make this app into a website").
+
+- `skylineqr-web`: the demo app's screen in a browser, a static site on GitHub Pages. Kotlin/Wasm,
+  not Kotlin/JS: Wasm keeps Float arithmetic in 32 bits like the JVM, and Kotlin/JS does not, so
+  only Wasm plans the same city.
+- `skylineqr-core` is Kotlin Multiplatform (JVM and Wasm). Nothing in it may need the JVM:
+  `QrEncoder` is ZXing's encoder adapted into Kotlin and must choose exactly ZXing 3.5's symbol,
+  mask included (`QrEncoderTest` compares them); `FdLibm` is fdlibm 5.3 in Kotlin and must return
+  StrictMath's bits (`FdLibmTest`); the clock, its zone and IDNA come from `Platform`. In the
+  browser IDNA is the URL parser's (UTS 46), so a rare host (ß, ς) may get a different identity
+  than on the phone. `CrossPlatformCityTest` hashes whole cities and runs on the JVM and on Wasm.
+- The renderer's platform-free files (WGSL, camera, frame layout, sky shapes, morph, fireworks,
+  tour) are compiled into the website from skylineqr-compose's sources, not copied.
+  `WebRenderer` is `CityRenderer` with the browser's plumbing (one thread, requestAnimationFrame)
+  and gpu.js builds the same passes with the browser's WebGPU; a change to what CityRenderer draws
+  or when belongs in both.
+- The page: a link box, the city full screen, Now, Day or Night, Clear, Storm or Haze, the code,
+  the tour, the timelapse, and under More what a long press does, the clouds, the sign board and
+  saving the code as an image. No share links, as in the app. Without WebGPU, the flat code on a
+  2D canvas in the flat city's colours (`FlatColours`), with a note. No tap to share: browsers
+  can't emulate an NFC tag.
+
 ## Library API (target)
 
 ```kotlin

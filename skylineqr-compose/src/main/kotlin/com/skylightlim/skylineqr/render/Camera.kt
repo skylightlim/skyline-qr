@@ -78,7 +78,7 @@ internal object Camera {
     val yaw = (BASE_YAW + view.yaw + 0.06f * sin(time * 0.25f)) * (1f - eased)
     val elevation = BASE_ELEVATION + view.elevation + (FLAT_ELEVATION - BASE_ELEVATION - view.elevation) * eased
     val fov = BASE_FOV + (FLAT_FOV - BASE_FOV) * eased
-    val tanHalf = tan(Math.toRadians(fov / 2.0)).toFloat()
+    val tanHalf = tan(fov / 2.0 * (kotlin.math.PI / 180)).toFloat()
     val fit = max(half / tanHalf, half / (tanHalf * aspect))
     val zoom = view.zoom + (1f - view.zoom) * eased
     val distance = fit * (1.18f + (FLAT_DISTANCE - 1.18f) * eased) / zoom
@@ -113,7 +113,7 @@ internal object Camera {
     val fwd = normalize(floatArrayOf(target[0] - eye[0], target[1] - eye[1], target[2] - eye[2]))
     val right = normalize(cross(fwd, UP))
     val up = cross(right, fwd)
-    val tanHalf = tan(Math.toRadians(BASE_FOV / 2.0)).toFloat()
+    val tanHalf = tan(BASE_FOV / 2.0 * (kotlin.math.PI / 180)).toFloat()
     val look = Mat4.lookAt(eye[0], eye[1], eye[2], target[0], target[1], target[2], 0f, 1f, 0f)
     val proj = Mat4.perspective(BASE_FOV, aspect, 0.4f, 260f, shiftY)
     return Pose(eye.copyOf(), fwd, right, up, tanHalf, aspect, shiftY, Mat4.multiply(proj, look))
