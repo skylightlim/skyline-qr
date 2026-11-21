@@ -1,24 +1,106 @@
 # Skyline QR
 
-A link becomes a 3D city that folds flat into its own scannable QR code. Every building stands on a
-QR module, so the skyline and the code are the same grid: tap the city and it settles into the code,
-tap again and it rises back up.
+**Turn any link into a tiny 3D city that folds into its own QR code.**
 
-**Try it in your browser: [skylightlim.github.io/skyline-qr](https://skylightlim.github.io/skyline-qr/)**, nothing to install.
+Paste a link and a little city grows out of it, with towers, streets, a monorail, traffic and a
+plane drifting overhead. Tap the city and it folds flat into a real QR code that any phone camera
+can scan. Tap again and it rises back up.
 
-Kotlin, Jetpack Compose, and WebGPU with WGSL shaders through
-[androidx.webgpu](https://developer.android.com/jetpack/androidx/releases/webgpu) (alpha). Where
-WebGPU cannot start, a flat 2D code takes its place, so the link always scans.
+The trick is that the city *is* the code. Every building stands on one square of the QR code, so
+the skyline and the code are the same grid seen two ways.
 
-> Early work in progress. See [docs/DESIGN.md](docs/DESIGN.md) for where this is going.
+### [Try it in your browser](https://skylightlim.github.io/skyline-qr/)
 
-## Get it
+Nothing to install or sign up for. There is also an [Android app](#the-android-app).
 
-The website is at [skylightlim.github.io/skyline-qr](https://skylightlim.github.io/skyline-qr/).
-It draws the city in any browser with WebGPU (Chrome, Edge, and recent Safari and Firefox); other
-browsers show the flat code. The demo app's APK is on the
-[Releases](https://github.com/skylightlim/skyline-qr/releases) page.
-The library comes through [JitPack](https://jitpack.io/#skylightlim/skyline-qr):
+<p align="center">
+  <img src="docs/images/city-day.png" alt="A city by day, with the link field and the Now, Day and Night buttons below it" width="260">
+  &nbsp;
+  <img src="docs/images/city-night.png" alt="The same city at night, its windows lit under a starry sky" width="260">
+  &nbsp;
+  <img src="docs/images/flat-code.png" alt="The city folded flat into a scannable QR code" width="260">
+</p>
+<p align="center"><em>The same link by day, by night, and folded into its QR code.</em></p>
+
+## What you can do
+
+| Do this | And you'll see |
+| --- | --- |
+| **Paste a link** | A new city builds as you type. |
+| **Tap the city** | It folds into its QR code. Point a phone camera at it to open the link. Tap again to rebuild the city. |
+| **Drag** | The city turns so you can look around it. |
+| **Pinch or scroll** | Zoom in and out. |
+| **Long-press** | A meteor crashes into the city, leaves a glowing crater, and the city rebuilds itself. Or switch it to fireworks. |
+| **Now / Day / Night** | *Now* follows your own clock: sunrise, daylight, sunset and a starry night with lit windows. *Day* and *Night* pin the hour. |
+| **Tour** (the ▶ button) | The camera flies past every landmark, then lands and folds the city into its code. |
+
+The settings button (the sliders, bottom right) holds the extras:
+
+- **Weather:** clear skies, a storm with rain and lightning, or a haze that rolls in.
+- **Long press:** choose a meteor or fireworks.
+- **Clouds:** turn the clouds on or off.
+- **Timelapse:** watch the city go from midday to night in fifteen seconds, with shadows
+  sweeping round and the windows coming on.
+- **Sign board:** write your own messages for the big screen on the shopping mall, one per line.
+
+<p align="center">
+  <img src="docs/images/settings.png" alt="The settings panel open on a computer, showing weather, long press, clouds, timelapse and the sign board" width="640">
+</p>
+
+## Examples
+
+Every link gets its own city, and **the same link always builds the same city**, on any phone or
+computer, every time. Nothing is stored on a server: the city comes from the link itself.
+
+| Try typing | What happens |
+| --- | --- |
+| `https://github.com/skylightlim/skyline-qr` | The city the website opens with. Fold it and scan it, and you land back on this page. |
+| `https://example.com` | A completely different skyline, with its own colours and layout. |
+| `https://example.com/about` and then `https://example.com/contact` | The same city both times, because the pages share a website, yet each folded code opens its own page. |
+| A link with a password or token in it | The city still builds, with a gentle warning to think twice before sharing its code. |
+| Something that isn't a link, or a very long link | The last good city stays on screen and a short note says what's wrong (a link too long to scan well asks for a shorter one). |
+
+The city is drawn after Kuala Lumpur. Look for the tall spire of Merdeka 118, the Menara KL
+telecom tower, the Petronas Twin Towers with their skybridge, the monorail running round the
+edge, a garden, a square and a mall with a fountain.
+
+## Which browsers show the city?
+
+The 3D city needs a browser with WebGPU, a newer graphics feature:
+
+- **Chrome, Edge and recent Safari** show the full city.
+- **Firefox and Zen** (and other browsers without it) show the flat QR code instead, with a short
+  note. The code still scans, so the link always works.
+
+## The Android app
+
+The app has everything the website has, plus a few things only a phone can do.
+
+- **Tap to share.** Hold your phone against a friend's and their phone opens your link. They don't
+  need the app, and it works with iPhones too. Android phones can also be handed a Wi-Fi network
+  to join or a contact to save.
+- **Cards.** Keep a set of things to share: links, notes, contacts, Wi-Fi networks and payment
+  codes such as DuitNow. Links and payment codes each get their own city.
+- **Scan.** Point the camera at a QR code to save it as a new card.
+- **Quick tour.** Long-press the app's icon on your home screen and pick *Tour*.
+
+Download it from the [Releases](https://github.com/skylightlim/skyline-qr/releases) page. It needs
+Android 8.0 or newer and a phone with Vulkan graphics (most phones from the last several years).
+
+---
+
+## For developers
+
+<details>
+<summary>The library, the modules and how to build</summary>
+
+Skyline QR is written in Kotlin. The phone draws the city with WebGPU and WGSL shaders through
+[androidx.webgpu](https://developer.android.com/jetpack/androidx/releases/webgpu) (alpha), and the
+website runs the same code as Kotlin/Wasm on the browser's WebGPU. Where WebGPU can't start, a
+flat 2D code takes its place. See [docs/DESIGN.md](docs/DESIGN.md) for the full design and
+[docs/NFC.md](docs/NFC.md) for tap to share.
+
+**Use the library** through [JitPack](https://jitpack.io/#skylightlim/skyline-qr):
 
 ```kotlin
 // settings.gradle.kts
@@ -27,71 +109,40 @@ dependencyResolutionManagement { repositories { maven("https://jitpack.io") } }
 implementation("com.github.skylightlim.skyline-qr:skylineqr-compose:v1.0.0")
 ```
 
-The app needs Android 8.0+ and a phone with Vulkan.
-
-## Modules
-
-| Module | What it is |
-| --- | --- |
-| `skylineqr-core` | Pure Kotlin. Link parsing, identity, the QR matrix and the city planner. |
-| `skylineqr-compose` | The renderer and the `SkylineQrCode` composable. Brings the core along. |
-| `skylineqr-nfc` | Tap to share: the phone as an NFC tag carrying a saved card, tag reading and writing, and a QR scanner. See [docs/NFC.md](docs/NFC.md). |
-| `app` | The demo app. |
-| `skylineqr-web` | The website: the demo in a browser, with Kotlin/Wasm and WebGPU. |
-
 ```kotlin
 SkylineQrCode(
   url = "https://example.com",
   modifier = Modifier.fillMaxSize(),
-  city = CityPreset.KUALA_LUMPUR,  // the default: three landmarks and the monorail; or GENERIC
-  time = TimeOfDay.AUTO,      // follows the phone's clock; or DAWN, DAY, DUSK, NIGHT
-  weather = Weather.CLEAR,    // or RAIN, HAZE, STORM
-  longPress = LongPress.METEOR,  // or FIREWORKS
+  city = CityPreset.KUALA_LUMPUR,  // the default; or GENERIC
+  time = TimeOfDay.AUTO,           // or DAWN, DAY, DUSK, NIGHT
+  weather = Weather.CLEAR,         // or RAIN, HAZE, STORM
+  longPress = LongPress.METEOR,    // or FIREWORKS
 )
 ```
 
-Tap to fold the city into its code and back. In the city, drag to turn it, pinch to zoom, and
-long-press to bring a meteor down (it rebuilds itself) or to let off fireworks;
-`state.resetCamera()` puts the camera back, `state.startTour()` flies it past every landmark
-and folds the city into its code, the same every time, and `state.startTimelapse()` runs the city
-from midday to night in fifteen seconds. Time and weather only light the city; they
-never change it. `onEvent` reports lightning and meteors, so an app can add sound of its own; the
-demo is silent.
+`state.resetCamera()`, `state.startTour()` and `state.startTimelapse()` drive the camera and the
+clock, and `onEvent` reports lightning and meteors if you want to add sound. By default every page
+on one site shares a city; pass `identityScope = IdentityScope.URL` to give each page its own. A
+saved city should record `GeneratorVersion.CURRENT` and pass it back as `generatorVersion`, so it
+never changes when the generator improves.
 
-The demo app adds a settings card (the tour and the timelapse, what a long press does, the clouds,
-the sign board's messages, the licences) and tap to share over NFC. It has no share links (removed 2026-11-09).
+| Module | What it is |
+| --- | --- |
+| `skylineqr-core` | Kotlin Multiplatform (JVM and Wasm): link parsing, identity, the QR matrix and the city planner. |
+| `skylineqr-compose` | The renderer and the `SkylineQrCode` composable. |
+| `skylineqr-nfc` | Tap to share, tag reading and writing, and a QR scanner. |
+| `app` | The demo app. |
+| `skylineqr-web` | The website, published to GitHub Pages on every push to main. |
 
-The same link always builds the same city. By default every page on one site shares a city while
-each QR still points at its own page; pass `identityScope = IdentityScope.URL` to give every page
-its own. A city you save should record `GeneratorVersion.CURRENT` and pass it back as
-`generatorVersion`, so it never changes when the generator improves.
-
-## Website
-
-`skylineqr-web` is the demo in a browser, live at [skylightlim.github.io/skyline-qr](https://skylightlim.github.io/skyline-qr/): the
-same link box, city, sky, weather, tour and timelapse. `.github/workflows/pages.yml` publishes it on
-GitHub Pages on every push to main. It is Kotlin/Wasm, so the
-core plans exactly the city the phone does (`CrossPlatformCityTest` checks it on the JVM and on
-Wasm), and the renderer draws it with the browser's WebGPU and the app's own WGSL. Browsers without
-WebGPU get the flat code on a 2D canvas, which still scans. Tap to share stays in the app: browsers
-can't act as an NFC tag.
-
-To work on it:
+**Build and test** (JDK 17+ and the Android SDK; compileSdk 37 for the app, 36 for the libraries):
 
 ```bash
-./gradlew :skylineqr-web:wasmJsBrowserDevelopmentRun   # a dev server with the site
-./gradlew :skylineqr-web:wasmJsBrowserDistribution     # the site, in skylineqr-web/build/dist/wasmJs/productionExecutable
+./gradlew test allTests assembleDebug                      # unit tests and the demo app
+./gradlew :skylineqr-compose:connectedDebugAndroidTest     # renders and scans frames on a connected phone
+./gradlew :skylineqr-web:wasmJsBrowserDevelopmentRun       # the website on a local dev server
 ```
 
-## Building
-
-```bash
-./gradlew test allTests assembleDebug
-./gradlew :skylineqr-compose:connectedDebugAndroidTest   # on a connected phone
-```
-
-The device tests render real WebGPU frames, read them back and scan them with ZXing. Needs JDK 17+
-and the Android SDK (compileSdk 37 for the app, 36 for the libraries). minSdk is 26.
+</details>
 
 ## Credits
 
