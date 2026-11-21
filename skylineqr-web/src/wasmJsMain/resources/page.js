@@ -114,3 +114,13 @@ const SkylinePage = (() => {
   return { onResize, onPointer, onWheel, setTheme, codeBegin, codeModule, codeDraw };
 })();
 globalThis.SkylinePage = SkylinePage;
+
+// If the page's Kotlin never starts (a browser without WebAssembly GC, or a failed download), say so
+// rather than leave an empty sky: the Kotlin side fills the link box as soon as it runs.
+setTimeout(() => {
+  const input = document.getElementById('link-input');
+  const notice = document.getElementById('notice');
+  if (!input || input.value || !notice) return;
+  notice.textContent = "This browser can't run Skyline QR. Open the page in a recent Chrome, Edge, Safari or Firefox.";
+  notice.hidden = false;
+}, 10000);

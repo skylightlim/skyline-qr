@@ -24,6 +24,9 @@ const SkylineGpu = (() => {
   let instances = null;
   let failed = false;
   let fail = () => {};
+  /** Set once the GPU has finished a whole frame: until then the page can't trust WebGPU. */
+  let proven = false;
+  let proving = false;
 
   function failNow(message) {
     if (failed) return;
@@ -31,13 +34,30 @@ const SkylineGpu = (() => {
     fail(String(message));
   }
 
+  /** Rejects if [promise] hasn't settled in [ms]: a hung WebGPU call must not leave the page blank. */
+  function within(ms, promise, what) {
+    return Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error(what + ' timed out')), ms))]);
+  }
+
+  /**
+   * Firefox and the browsers built on it (Zen, LibreWolf, Floorp…) ship WebGPU that can take the
+   * whole tab down with this renderer, which no error handler can catch, so they get the flat code
+   * unless the page is opened with ?webgpu=1.
+   */
+  function geckoWithoutOptIn() {
+    const ua = navigator.userAgent;
+    const gecko = /Gecko\/\d/.test(ua) && !/like Gecko/.test(ua);
+    return gecko && new URLSearchParams(location.search).get('webgpu') !== '1';
+  }
+
   async function start(source, post, frameFloats, shadowSize, trafficFloats, mesh, indices, atlasWidth, atlasHeight, ready, onFail) {
     fail = onFail;
     try {
       if (!navigator.gpu) throw new Error('WebGPU is not available in this browser');
-      const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+      if (geckoWithoutOptIn()) throw new Error('WebGPU is not stable enough in Firefox-based browsers yet');
+      const adapter = await within(5000, navigator.gpu.requestAdapter({ powerPreference: 'high-performance' }), 'requestAdapter');
       if (!adapter) throw new Error('no WebGPU adapter');
-      device = await adapter.requestDevice({ label: 'SkylineQR' });
+      device = await within(5000, adapter.requestDevice({ label: 'SkylineQR' }), 'requestDevice');
       device.lost.then((info) => { if (info.reason !== 'destroyed') failNow('WebGPU device lost: ' + info.message); });
       device.addEventListener('uncapturederror', (e) => failNow('WebGPU error: ' + e.error.message));
       const canvas = document.getElementById('city');
@@ -46,7 +66,7 @@ const SkylineGpu = (() => {
       // Shaders write display-ready colour themselves, so the canvas must not be an sRGB format.
       format = navigator.gpu.getPreferredCanvasFormat();
       res = resources(frameFloats, shadowSize, trafficFloats, mesh, indices, atlasWidth, atlasHeight);
-      pipes = await pipelines(source, post);
+      pipes = await within(15000, pipelines(source, post), 'building the pipelines');
       ready();
     } catch (e) {
       failNow(e && e.message ? e.message : e);
@@ -366,6 +386,14 @@ const SkylineGpu = (() => {
     }
     screenPass(encoder, context.getCurrentTexture().createView(), pipes.composite, targets.compositeGroup, false);
     device.queue.submit([encoder.finish()]);
+    if (!proven && !proving) {
+      // The first frame proves WebGPU works here; one that never finishes means it doesn't.
+      proving = true;
+      // Only a frame that hangs counts: errors and lost devices are heard by the handlers in start.
+      within(8000, device.queue.onSubmittedWorkDone().catch(() => {}), 'the first frame')
+        .then(() => { proven = true; })
+        .catch((e) => failNow(e.message));
+    }
   }
 
   /**

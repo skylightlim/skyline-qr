@@ -220,6 +220,7 @@ private class Page {
     Dom.setHidden("reset", busy || view == View() || fallback)
     Dom.setHidden("city-only", fallback)
     Dom.setHidden("city-settings", fallback)
+    Dom.setHidden("tour", fallback)
   }
 
   // The camera: the app's drag, pinch, momentum and soft limits.
@@ -409,7 +410,7 @@ private class Page {
     Dom.setHidden("flat", false)
     Dom.setText(
       "notice",
-      "This browser can't run WebGPU, so here is the flat code. Try a recent Chrome, Edge or Safari for the city.",
+      "The 3D city can't run in this browser, so here is its flat code, which scans the same. Open the page in a recent Chrome, Edge or Safari to see the city.",
     )
     Dom.setHidden("notice", false)
     showControls()
