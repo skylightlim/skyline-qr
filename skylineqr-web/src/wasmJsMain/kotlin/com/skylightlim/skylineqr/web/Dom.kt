@@ -35,8 +35,7 @@ internal object Dom {
 
   fun codeBegin(modules: Int, paper: String) = jsCodeBegin(modules, paper)
   fun codeModule(col: Int, row: Int, color: String) = jsCodeModule(col, row, color)
-  fun codeDraw(canvas: String, quiet: Int, modulePx: Int) = jsCodeDraw(canvas, quiet, modulePx)
-  fun download(name: String) = jsDownload(name)
+  fun codeDraw(canvas: String, quiet: Int) = jsCodeDraw(canvas, quiet)
 }
 
 @JsFun("(id) => document.getElementById(id).value")
@@ -108,8 +107,5 @@ private external fun jsCodeBegin(modules: Int, paper: String)
 @JsFun("(c, r, color) => SkylinePage.codeModule(c, r, color)")
 private external fun jsCodeModule(col: Int, row: Int, color: String)
 
-@JsFun("(canvas, quiet, px) => SkylinePage.codeDraw(canvas, quiet, px)")
-private external fun jsCodeDraw(canvas: String, quiet: Int, modulePx: Int)
-
-@JsFun("(name) => SkylinePage.download(name)")
-private external fun jsDownload(name: String)
+@JsFun("(canvas, quiet) => SkylinePage.codeDraw(canvas, quiet)")
+private external fun jsCodeDraw(canvas: String, quiet: Int)

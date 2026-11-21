@@ -1,5 +1,5 @@
 // The page side of the website: sizing the canvases, pointer events, the theme, and drawing the
-// flat code for the fallback and the saved image. Main.kt drives it.
+// flat code for the fallback. Main.kt drives it.
 'use strict';
 
 const SkylinePage = (() => {
@@ -83,7 +83,6 @@ const SkylinePage = (() => {
 
   // The flat code: a mosaic of square modules on the hour's paper, with a four-module quiet zone.
   let code = { n: 0, paper: '#fff', colors: [] };
-  let saved = null;
 
   function codeBegin(n, paper) {
     code = { n, paper, colors: new Array(n * n) };
@@ -93,24 +92,13 @@ const SkylinePage = (() => {
     code.colors[row * code.n + col] = color;
   }
 
-  function codeDraw(canvasId, quiet, modulePx) {
+  function codeDraw(canvasId, quiet) {
     const n = code.n;
     const side = n + 2 * quiet;
-    let canvas;
-    let cell;
-    let ox = 0;
-    let oy = 0;
-    if (canvasId) {
-      canvas = document.getElementById(canvasId);
-      cell = (Math.min(canvas.width, canvas.height) * 0.9) / side;
-      ox = (canvas.width - cell * side) / 2;
-      oy = (canvas.height - cell * side) / 2;
-    } else {
-      canvas = document.createElement('canvas');
-      canvas.width = canvas.height = side * modulePx;
-      cell = modulePx;
-      saved = canvas;
-    }
+    const canvas = document.getElementById(canvasId);
+    const cell = (Math.min(canvas.width, canvas.height) * 0.9) / side;
+    const ox = (canvas.width - cell * side) / 2;
+    const oy = (canvas.height - cell * side) / 2;
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = code.paper;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -123,17 +111,6 @@ const SkylinePage = (() => {
     }
   }
 
-  function download(name) {
-    if (!saved) return;
-    saved.toBlob((blob) => {
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = name;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-    }, 'image/png');
-  }
-
-  return { onResize, onPointer, onWheel, setTheme, codeBegin, codeModule, codeDraw, download };
+  return { onResize, onPointer, onWheel, setTheme, codeBegin, codeModule, codeDraw };
 })();
 globalThis.SkylinePage = SkylinePage;
