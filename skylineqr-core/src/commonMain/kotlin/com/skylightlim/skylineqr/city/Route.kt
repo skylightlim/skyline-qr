@@ -46,7 +46,7 @@ class Route(
    * a yaw where 0 faces +x. A loop wraps; an open route stops at its ends.
    */
   fun at(s: Float, out: FloatArray) {
-    val d = if (closed) ((s % length) + length) % length else s.coerceIn(0f, length)
+    val d = distanceAt(s)
     var lo = 0
     var hi = segments - 1
     while (lo < hi) {
@@ -61,6 +61,44 @@ class Route(
     out[1] = y(a) + (y(b) - y(a)) * t
     out[2] = z(a) + (z(b) - z(a)) * t
     out[3] = turnBetween(headings[a], headings[b], t)
+  }
+
+  /**
+   * [at] without the heading, for walking a route forward in small steps: the position [s] world
+   * units along it into out[0..2], exactly as [at] puts it. [from] is the segment the previous
+   * call returned, which saves the search; returns the segment [s] fell on.
+   */
+  internal fun positionAt(s: Float, out: FloatArray, from: Int): Int {
+    val d = distanceAt(s)
+    // The last segment starting at or before d, as at's search finds it: forward from the hint
+    // while the walk goes on, from the start once a loop wraps.
+    var lo = if (from in 0 until segments && cumulative[from] <= d) from else 0
+    while (lo < segments - 1 && cumulative[lo + 1] <= d) lo++
+    val a = lo
+    val b = (lo + 1) % count
+    val span = cumulative[lo + 1] - cumulative[lo]
+    val t = if (span > 1e-6f) (d - cumulative[lo]) / span else 0f
+    out[0] = x(a) + (x(b) - x(a)) * t
+    out[1] = y(a) + (y(b) - y(a)) * t
+    out[2] = z(a) + (z(b) - z(a)) * t
+    return lo
+  }
+
+  /**
+   * How far along the route [s] lands: a loop wraps, `((s % length) + length) % length`, and an
+   * open route stops at its ends. Float `%` is slow (a library call on the JVM and on ARM), so for
+   * the usual 0 <= s < 2 lengths the same bits come from subtraction instead: `%` is exact, and so
+   * is subtracting a length from anything between one and two lengths (Sterbenz's lemma).
+   */
+  private fun distanceAt(s: Float): Float {
+    if (!closed) return s.coerceIn(0f, length)
+    val twice = 2f * length
+    if (s >= 0f && s < twice) {
+      val r = if (s < length) s else s - length
+      val x = r + length
+      if (x < twice) return x - length
+    }
+    return ((s % length) + length) % length
   }
 
   private fun distance(i: Int, j: Int): Float {

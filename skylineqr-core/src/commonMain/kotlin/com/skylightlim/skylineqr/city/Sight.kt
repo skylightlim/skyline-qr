@@ -11,17 +11,17 @@ import com.skylightlim.skylineqr.core.FdLibm
  */
 internal object Sight {
 
-  private val SIN = FdLibm.sin(CityPlanner.VIEW_YAW.toDouble()).toFloat()
-  private val COS = FdLibm.cos(CityPlanner.VIEW_YAW.toDouble()).toFloat()
+  @PublishedApi internal val SIN = FdLibm.sin(CityPlanner.VIEW_YAW.toDouble()).toFloat()
+  @PublishedApi internal val COS = FdLibm.cos(CityPlanner.VIEW_YAW.toDouble()).toFloat()
 
   /**
    * How much a ray toward the camera climbs for each unit it crosses the ground: a little less
    * than the camera's own angle, as the rays to the far side of the city do, the camera being
    * further from there.
    */
-  private val RISE = 0.92f * FdLibm.tan(CityPlanner.VIEW_ELEVATION.toDouble()).toFloat()
+  @PublishedApi internal val RISE = 0.92f * FdLibm.tan(CityPlanner.VIEW_ELEVATION.toDouble()).toFloat()
 
-  private const val STEP = 0.2f
+  @PublishedApi internal const val STEP = 0.2f
 
   /** How far right on the screen: the camera's right is (cos, 0, -sin) of its bearing. */
   fun across(x: Float, z: Float) = x * COS - z * SIN
@@ -32,8 +32,10 @@ internal object Sight {
   /**
    * Whether the camera sees the point ([x], [y], [z]): nothing [height] stands up over the ground
    * reaches the ray from it, which is clear once it climbs past [top], the tallest thing there.
+   * Inline, so [height] is called without boxing every float: planning the monorail asks this of
+   * every module, many steps each.
    */
-  fun clear(x: Float, y: Float, z: Float, top: Float, height: (Float, Float) -> Float): Boolean {
+  inline fun clear(x: Float, y: Float, z: Float, top: Float, height: (Float, Float) -> Float): Boolean {
     var t = STEP
     while (y + t * RISE < top) {
       if (height(x + SIN * t, z + COS * t) > y + t * RISE) return false
