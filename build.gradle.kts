@@ -12,3 +12,18 @@ subprojects {
   group = "com.github.skylightlim.skyline-qr"
   version = rootProject.version
 }
+
+// The Kotlin plugin fetches Node.js (Wasm tests) and Binaryen (the website's optimiser) from their
+// own sites by adding repositories to the project, which settings' FAIL_ON_PROJECT_REPOS forbids.
+// Settings declares those two repositories instead, so the plugin is told not to add its own.
+allprojects {
+  plugins.withType<org.jetbrains.kotlin.gradle.targets.wasm.nodejs.WasmNodeJsRootPlugin> {
+    the<org.jetbrains.kotlin.gradle.targets.wasm.nodejs.WasmNodeJsEnvSpec>().downloadBaseUrl.set(null as String?)
+  }
+  plugins.withType<org.jetbrains.kotlin.gradle.targets.wasm.nodejs.WasmNodeJsPlugin> {
+    the<org.jetbrains.kotlin.gradle.targets.wasm.nodejs.WasmNodeJsEnvSpec>().downloadBaseUrl.set(null as String?)
+  }
+  plugins.withType<org.jetbrains.kotlin.gradle.targets.wasm.binaryen.BinaryenPlugin> {
+    the<org.jetbrains.kotlin.gradle.targets.wasm.binaryen.BinaryenEnvSpec>().downloadBaseUrl.set(null as String?)
+  }
+}
