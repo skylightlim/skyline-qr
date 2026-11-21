@@ -86,14 +86,16 @@ private class Page {
     Dom.onResize { resize() }
     Dom.everySecond { refreshTheme() }
 
+    // WebGPU first: the adapter, the device and the shaders come together in the browser's GPU
+    // process while the city is planned here, instead of only after it.
+    val (w, h) = Dom.canvasSize("city")
+    renderer.start(w, h)
     build(link)
     setTime(time)
     setWeather(weather)
     setLongPress(longPress)
     Dom.setPressed("clouds", true)
     showControls()
-    val (w, h) = Dom.canvasSize("city")
-    renderer.start(w, h)
   }
 
   // The link and its city.

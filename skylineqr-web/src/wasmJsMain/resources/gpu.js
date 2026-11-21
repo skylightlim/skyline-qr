@@ -232,7 +232,8 @@ const SkylineGpu = (() => {
         // A little bias keeps faces from shadowing themselves.
         depthStencil: { format: SHADOW, depthWriteEnabled: true, depthCompare: 'less-equal', depthBias: 2, depthBiasSlopeScale: 2 },
       }),
-      pipeline('sky', { module, entryPoint: 'skyVertex' }, 'skyFragment', depth(false, 'always')),
+      // The sky lies at the far plane and is drawn after the city, so it shades only what the city leaves.
+      pipeline('sky', { module, entryPoint: 'skyVertex' }, 'skyFragment', depth(false, 'less-equal')),
       pipeline('clouds', blockVertexState(module, 'cloudVertex'), 'cloudFragment', depth(false, 'less-equal'), alpha),
       pipeline('rain', { module, entryPoint: 'rainVertex' }, 'rainFragment', depth(false, 'less-equal'), alpha),
       screen('bloom prefilter', 'bloomPrefilter', HDR),
@@ -351,16 +352,19 @@ const SkylineGpu = (() => {
       depthStencilAttachment: { view: targets.depthView, depthLoadOp: 'clear', depthStoreOp: 'discard', depthClearValue: 1 },
     });
     pass.setBindGroup(0, res.sceneGroup);
-    pass.setPipeline(pipes.sky);
-    pass.draw(3);
     if (city) {
       pass.setPipeline(pipes.blocks);
       drawBlocks(pass, count, moving, indexCount);
-      if (moving > 0 && fold < 0.999) {
-        // The clouds, soft and blended over all that: their puffs are among the traffic's boxes.
-        pass.setPipeline(pipes.clouds);
-        pass.drawIndexed(indexCount, moving);
-      }
+    }
+    // The sky after the city, behind it by depth: the same picture, but the GPU skips the sky's
+    // work wherever a building or the plate already stands.
+    pass.setPipeline(pipes.sky);
+    pass.draw(3);
+    if (city && moving > 0 && fold < 0.999) {
+      // The clouds, soft and blended over all that: their puffs are among the traffic's boxes,
+      // whose buffers drawBlocks left bound.
+      pass.setPipeline(pipes.clouds);
+      pass.drawIndexed(indexCount, moving);
     }
     if (drops > 0) {
       pass.setPipeline(pipes.rain);
