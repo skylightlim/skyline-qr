@@ -48,3 +48,21 @@ kotlin {
     }
   }
 }
+
+// The browser fetches the wasm alongside the page instead of only once the script that asks for it
+// has arrived and run, a round trip sooner (2026-11-21): the distribution's index.html gets a
+// preload link naming the wasm, whose name is a hash of its contents. The dev server keeps the
+// placeholder, a comment.
+tasks.named("wasmJsBrowserDistribution") {
+  val dist = layout.buildDirectory.dir("dist/wasmJs/productionExecutable")
+  doLast {
+    val dir = dist.get().asFile
+    val wasm = dir.listFiles { file -> file.extension == "wasm" }?.singleOrNull()?.name
+      ?: throw GradleException("expected one .wasm file in $dir")
+    val index = dir.resolve("index.html")
+    val marker = "<!-- wasm preload -->"
+    val page = index.readText()
+    check(marker in page) { "index.html has no $marker" }
+    index.writeText(page.replace(marker, """<link rel="preload" href="$wasm" as="fetch" type="application/wasm" crossorigin>"""))
+  }
+}

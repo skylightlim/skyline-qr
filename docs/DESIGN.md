@@ -45,6 +45,13 @@ with no server involved.
   with the same WGSL on a desktop GPU.
 - 4× MSAA. On a 120 Hz screen it draws every other frame (2026-11-12), a steady 60; 60 fps on the Pixel 6a: continuous while traffic moves, paused in the background, redraw
   on change only when idle in the flat view.
+- Speed (2026-11-21, at the user's request: "optimize the app and website so it run as smooth as
+  possible"), none of it changing a pixel: the sky is drawn after the city, at the far plane, so
+  the GPU shades only the sky the city leaves; the app starts the device and builds its pipelines
+  as soon as the renderer exists, not once the surface arrives; the planner takes a fourteenth of
+  the time on the JVM (cars on one loop share its stop lines, routes are walked without float `%`,
+  the monorail's search without boxing), with TrafficMotionTest pinning every car's motion so the
+  same link still moves the same traffic.
 
 ## QR and identity
 
@@ -563,6 +570,8 @@ Added 2026-11-21, at the user's request ("make this app into a website").
   one wide link field with a square Tour button, then Now, Day and Night as three equal buttons and
   a square button for the rest (weather, what a long press does, the clouds, the timelapse, the
   sign board). Tapping the city folds it into its code. No share links, as in the app.
+- Loading (2026-11-21): the page starts WebGPU before it plans the city, so the browser's GPU
+  process works meanwhile, and index.html preloads the wasm (the build fills in its hashed name).
 - WebGPU is tried only where it can't take the tab down: Firefox-based browsers (Zen among them)
   get the flat code unless opened with `?webgpu=1`, because their WebGPU crashed the page; a
   request that hangs, or a first frame that never finishes, also falls back. Without WebGPU, the flat code on a
