@@ -992,16 +992,19 @@ internal class CityRenderer(
         )
         .use { pass ->
           pass.setBindGroup(0, resources.sceneGroup)
-          pass.setPipeline(pipelines.sky)
-          pass.draw(3)
           if (city != null && instances != null) {
             pass.setPipeline(pipelines.blocks)
             drawBlocks(pass, resources, instances, city.count, moving)
-            if (moving > 0 && fold < 0.999f) {
-              // The clouds, soft and blended over all that: their puffs are among the traffic's boxes.
-              pass.setPipeline(pipelines.clouds)
-              pass.drawIndexed(FrameData.CUBE_INDICES.size, moving)
-            }
+          }
+          // The sky after the city, behind it by depth: the same picture, but the GPU skips the
+          // sky's work wherever a building or the plate already stands.
+          pass.setPipeline(pipelines.sky)
+          pass.draw(3)
+          if (city != null && instances != null && moving > 0 && fold < 0.999f) {
+            // The clouds, soft and blended over all that: their puffs are among the traffic's
+            // boxes, whose buffers drawBlocks left bound.
+            pass.setPipeline(pipelines.clouds)
+            pass.drawIndexed(FrameData.CUBE_INDICES.size, moving)
           }
           if (drops > 0) {
             pass.setPipeline(pipelines.rain)
@@ -1772,7 +1775,8 @@ internal class CityRenderer(
                 ),
             )
           )
-        val sky = pipeline("sky", GPUVertexState(module, "skyVertex"), "skyFragment", depth(write = false, compare = CompareFunction.Always))
+        // The sky lies at the far plane and is drawn after the city, so it shades only what the city leaves.
+        val sky = pipeline("sky", GPUVertexState(module, "skyVertex"), "skyFragment", depth(write = false, compare = CompareFunction.LessEqual))
         val clouds = pipeline("clouds", blockVertexState(module, "cloudVertex"), "cloudFragment", depth(write = false, compare = CompareFunction.LessEqual), alpha)
         val rain = pipeline("rain", GPUVertexState(module, "rainVertex"), "rainFragment", depth(write = false, compare = CompareFunction.LessEqual), alpha)
         val additive = GPUBlendState(
