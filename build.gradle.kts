@@ -16,6 +16,7 @@ subprojects {
 // The Kotlin plugin fetches Node.js (Wasm tests) and Binaryen (the website's optimiser) from their
 // own sites by adding repositories to the project, which settings' FAIL_ON_PROJECT_REPOS forbids.
 // Settings declares those two repositories instead, so the plugin is told not to add its own.
+@OptIn(org.jetbrains.kotlin.gradle.ExperimentalWasmDsl::class)
 allprojects {
   plugins.withType<org.jetbrains.kotlin.gradle.targets.wasm.nodejs.WasmNodeJsRootPlugin> {
     the<org.jetbrains.kotlin.gradle.targets.wasm.nodejs.WasmNodeJsEnvSpec>().downloadBaseUrl.set(null as String?)

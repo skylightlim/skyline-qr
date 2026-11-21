@@ -11,6 +11,8 @@ kotlin {
   jvm()
   @OptIn(org.jetbrains.kotlin.gradle.ExperimentalWasmDsl::class)
   wasmJs {
+    // npm names the package after the root project otherwise, and "Skyline QR" has a space.
+    outputModuleName = "skylineqr-core"
     // A library for the website; its tests run on Node, not in a browser.
     browser {
       testTask { enabled = false }
