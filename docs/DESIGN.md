@@ -569,6 +569,22 @@ Added 2026-11-21, at the user's request ("make this app into a website").
   2D canvas in the flat city's colours (`FlatColours`), with a note. No tap to share: browsers
   can't emulate an NFC tag.
 
+## Loading poster
+
+Added 2026-11-21, at the user's request ("create a poster of kuala lumpur, put it as the loading
+page before the city is loaded"). While the first city builds, the website and the app show a map
+poster of Kuala Lumpur over everything, on its own paper so the whole poster shows on any screen,
+with "Building the city…" above it. It goes when the first frame with a city has drawn (the app:
+`SkylineQrState.loading`, which the renderer's first such frame ends; the website: gpu.js once
+that frame's work is done), or when the flat code or an error takes its place, and stays at least
+1.2 s so it never just flickers past, then fades over 0.6 s.
+
+The poster is made by maptoposter (MIT; run, not copied) from OpenStreetMap data in its Monochrome
+Blue theme, the app's blue: the centre between Merdeka Square and KLCC, 7 km, 9:16, 900 px wide
+as WebP. `tools/poster/make_poster.sh` makes it, and the Poster workflow runs that on GitHub,
+since it needs OpenStreetMap's Overpass API, and commits the result. The poster prints
+"© OpenStreetMap contributors", as the ODbL asks; NOTICE credits both.
+
 ## Library API (target)
 
 ```kotlin
@@ -576,7 +592,7 @@ SkylineQrCode(
   url, modifier,
   city = CityPreset.Generic, time = TimeOfDay.Auto, weather = Weather.Clear,
   identityScope = IdentityScope.SITE, generatorVersion = GeneratorVersion.CURRENT,
-  state = rememberSkylineQrState(),   // flat/3D, snapshot(), resetCamera(), startTour()/stopTour()/touring
+  state = rememberSkylineQrState(),   // flat/3D, loading, snapshot(), resetCamera(), startTour()/stopTour()/touring
   haptics = true, billboard = listOf(…), clouds = true,
   longPress = LongPress.METEOR,       // or FIREWORKS
   onEvent = { … },                    // lightning and meteors, for sound

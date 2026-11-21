@@ -25,6 +25,9 @@ internal object Dom {
   fun cancel(timer: Int) = jsCancel(timer)
   fun reducedMotion(): Boolean = jsReducedMotion()
   fun setTheme(color: String, light: Boolean) = jsSetTheme(color, light)
+
+  /** Takes the loading poster away (page.js); gpu.js does it itself once the city has drawn. */
+  fun loaded() = jsLoaded()
   fun vibrate(pattern: IntArray) = jsVibrate(pattern.joinToString(","))
 
   /** The canvas's size in device pixels. */
@@ -85,6 +88,9 @@ private external fun jsReducedMotion(): Boolean
 
 @JsFun("(c, light) => SkylinePage.setTheme(c, light)")
 private external fun jsSetTheme(color: String, light: Boolean)
+
+@JsFun("() => SkylinePage.loaded()")
+private external fun jsLoaded()
 
 @JsFun("(p) => { if (navigator.vibrate) navigator.vibrate(p.split(',').map(Number)); }")
 private external fun jsVibrate(pattern: String)

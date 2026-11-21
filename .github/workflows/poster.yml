@@ -1,0 +1,25 @@
+name: Poster
+
+# Remakes the Kuala Lumpur loading poster (tools/poster/make_poster.sh) from fresh OpenStreetMap
+# data and commits it to the branch it ran on. Run it by hand from the Actions tab.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  poster:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: tools/poster/make_poster.sh
+      - run: |
+          git config user.name skylightlim
+          git config user.email chenyulim105@gmail.com
+          git add skylineqr-web/src/wasmJsMain/resources/kl-poster.webp app/src/main/res/drawable-nodpi/kl_poster.webp
+          git diff --cached --quiet || git commit -m "Remake the Kuala Lumpur loading poster"
+          git push

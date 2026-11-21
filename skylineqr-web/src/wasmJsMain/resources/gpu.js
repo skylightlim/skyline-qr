@@ -391,7 +391,11 @@ const SkylineGpu = (() => {
       proving = true;
       // Only a frame that hangs counts: errors and lost devices are heard by the handlers in start.
       within(8000, device.queue.onSubmittedWorkDone().catch(() => {}), 'the first frame')
-        .then(() => { proven = true; })
+        .then(() => {
+          proven = true;
+          // The city is on screen: the loading poster can go.
+          globalThis.SkylinePage?.loaded();
+        })
         .catch((e) => failNow(e.message));
     }
   }

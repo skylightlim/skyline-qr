@@ -4,6 +4,7 @@ package com.skylightlim.skylineqr.ui
 
 import android.app.Activity
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -120,9 +121,19 @@ fun SkylineScreen(
 
   val darkPanel = air.night > 0.5f || weather == Weather.STORM
   val sky = Color(air.skyHorizon[0], air.skyHorizon[1], air.skyHorizon[2])
+  // The loading poster: until the first city is on screen, and at least a moment so it never just
+  // flickers past.
+  var posterUp by remember { mutableStateOf(true) }
+  LaunchedEffect(qr) {
+    delay(POSTER_MIN_MILLIS)
+    snapshotFlow { qr.loading }.first { !it }
+    posterUp = false
+  }
+
   // Status bar icons sit on the backdrop in the city, and on the code's paper in the flat code.
   val behindBars = if (qr.flat) air.paper else Atmospheres.backdrop(air)
-  val lightBehindBars = 0.2126f * behindBars[0] + 0.7152f * behindBars[1] + 0.0722f * behindBars[2] > 0.5f
+  // The poster is pale paper.
+  val lightBehindBars = posterUp || 0.2126f * behindBars[0] + 0.7152f * behindBars[1] + 0.0722f * behindBars[2] > 0.5f
   val view = LocalView.current
   SideEffect {
     val window = (view.context as? Activity)?.window ?: return@SideEffect
@@ -222,8 +233,13 @@ fun SkylineScreen(
         }
       }
     }
+
+    AnimatedVisibility(posterUp, exit = fadeOut(tween(POSTER_FADE_MILLIS))) { LoadingPoster() }
   }
 }
+
+private const val POSTER_MIN_MILLIS = 1200L
+private const val POSTER_FADE_MILLIS = 600
 
 /** Now follows the clock through dawn and dusk; the fixed choices are just day and night. */
 private val TIMES = listOf(TimeOfDay.AUTO, TimeOfDay.DAY, TimeOfDay.NIGHT)

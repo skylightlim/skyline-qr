@@ -108,6 +108,20 @@ which is in the public domain. Only its proportions and colours are used; no
 file from it is included.
 
 ------------------------------------------------------------------------------
+Loading poster (map data)
+------------------------------------------------------------------------------
+
+The map poster of Kuala Lumpur shown while the city loads
+(skylineqr-web/src/wasmJsMain/resources/kl-poster.webp and
+app/src/main/res/drawable-nodpi/kl_poster.webp) was made with maptoposter by
+Ankur Gupta (https://github.com/originalankur/maptoposter, MIT License,
+Copyright (c) 2026 Ankur Gupta), run unchanged by tools/poster/make_poster.sh;
+none of its code is included here. It sets its text in Roboto (Apache License
+2.0). The map data is © OpenStreetMap contributors, available under the Open
+Database License (https://www.openstreetmap.org/copyright); the poster prints
+that credit on itself.
+
+------------------------------------------------------------------------------
 Tap to share (skylineqr-nfc)
 ------------------------------------------------------------------------------
 

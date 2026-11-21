@@ -89,6 +89,14 @@ class SkylineQrState {
   var fallback by mutableStateOf(false)
     internal set
 
+  /**
+   * True until the first city is on screen (or the flat 2D code in its place), so an app can cover
+   * the wait; the demo shows a map poster of Kuala Lumpur. A link that can't become a city ends it
+   * too, so its error shows. It never turns back on.
+   */
+  var loading by mutableStateOf(true)
+    internal set
+
   internal var view by mutableStateOf(View())
 
   /** Where the fingers have taken the camera, limits and all; [view] is that with soft edges. */
@@ -355,6 +363,7 @@ fun SkylineQrCode(
       state.error = null
     } catch (e: SkylineQrException) {
       state.error = e
+      state.loading = false
     }
   }
   state.time = time
@@ -450,6 +459,7 @@ fun SkylineQrCode(
       }
 
   if (state.fallback) {
+    if (built != null) SideEffect { state.loading = false }
     val air = state.atmosphere()
     Box(modifier.background(Color(FlatCode.paper(air))).then(described).then(gestures)) {
       built?.let {
@@ -464,7 +474,7 @@ fun SkylineQrCode(
   }
 
   val events by rememberUpdatedState(onEvent)
-  val renderer = remember(state) { CityRenderer(onFailure = { state.fallback = true }, onEvent = { events(it) }) }
+  val renderer = remember(state) { CityRenderer(onFailure = { state.fallback = true }, onEvent = { events(it) }, onFirstCity = { state.loading = false }) }
   DisposableEffect(renderer) {
     state.renderer = renderer
     onDispose {
