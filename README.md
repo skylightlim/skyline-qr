@@ -4,6 +4,8 @@ A link becomes a 3D city that folds flat into its own scannable QR code. Every b
 QR module, so the skyline and the code are the same grid: tap the city and it settles into the code,
 tap again and it rises back up.
 
+**Try it in your browser: [skylightlim.github.io/skyline-qr](https://skylightlim.github.io/skyline-qr/)**, nothing to install.
+
 Kotlin, Jetpack Compose, and WebGPU with WGSL shaders through
 [androidx.webgpu](https://developer.android.com/jetpack/androidx/releases/webgpu) (alpha). Where
 WebGPU cannot start, a flat 2D code takes its place, so the link always scans.
@@ -12,7 +14,10 @@ WebGPU cannot start, a flat 2D code takes its place, so the link always scans.
 
 ## Get it
 
-The demo app's APK is on the [Releases](https://github.com/skylightlim/skyline-qr/releases) page.
+The website is at [skylightlim.github.io/skyline-qr](https://skylightlim.github.io/skyline-qr/).
+It draws the city in any browser with WebGPU (Chrome, Edge, and recent Safari and Firefox); other
+browsers show the flat code. The demo app's APK is on the
+[Releases](https://github.com/skylightlim/skyline-qr/releases) page.
 The library comes through [JitPack](https://jitpack.io/#skylightlim/skyline-qr):
 
 ```kotlin
@@ -63,12 +68,15 @@ its own. A city you save should record `GeneratorVersion.CURRENT` and pass it ba
 
 ## Website
 
-`skylineqr-web` is the demo in a browser: the same link box, city, sky, weather, tour and
-timelapse, published on GitHub Pages by `.github/workflows/pages.yml`. It is Kotlin/Wasm, so the
+`skylineqr-web` is the demo in a browser, live at [skylightlim.github.io/skyline-qr](https://skylightlim.github.io/skyline-qr/): the
+same link box, city, sky, weather, tour and timelapse. `.github/workflows/pages.yml` publishes it on
+GitHub Pages on every push to main. It is Kotlin/Wasm, so the
 core plans exactly the city the phone does (`CrossPlatformCityTest` checks it on the JVM and on
 Wasm), and the renderer draws it with the browser's WebGPU and the app's own WGSL. Browsers without
 WebGPU get the flat code on a 2D canvas, which still scans. Tap to share stays in the app: browsers
 can't act as an NFC tag.
+
+To work on it:
 
 ```bash
 ./gradlew :skylineqr-web:wasmJsBrowserDevelopmentRun   # a dev server with the site
