@@ -7,7 +7,7 @@ internal object Mat4 {
 
   /** Right-handed perspective onto WebGPU's clip space, where depth runs 0 (near) to 1 (far). */
   fun perspective(fovYDeg: Float, aspect: Float, near: Float, far: Float, shiftY: Float = 0f): FloatArray {
-    val f = 1f / tan(Math.toRadians(fovYDeg.toDouble() / 2).toFloat())
+    val f = 1f / tan((fovYDeg.toDouble() / 2 * (kotlin.math.PI / 180)).toFloat())
     val m = FloatArray(16)
     m[0] = f / aspect
     m[5] = f

@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1b2433">
+  <meta name="description" content="A link becomes a 3D city that folds flat into its own scannable QR code.">
+  <title>Skyline QR</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <header class="bar top">
+      <label class="field">
+        <span class="sr-only">Link</span>
+        <input id="link-input" type="url" inputmode="url" autocomplete="url" spellcheck="false" placeholder="Paste a link or a payment code">
+      </label>
+      <p id="error" class="error" role="status" aria-live="polite"></p>
+    </header>
+
+    <div id="stage" class="stage" tabindex="0" role="button" aria-label="City QR code. Tap to show the code.">
+      <canvas id="city"></canvas>
+      <canvas id="flat" hidden></canvas>
+    </div>
+    <p id="notice" class="notice" hidden></p>
+
+    <footer class="bar bottom">
+      <button id="stop" class="pill" hidden>Stop</button>
+      <div id="controls" class="controls">
+        <div class="row">
+          <div class="segmented" role="group" aria-label="Time">
+            <button id="time-now" aria-pressed="true">Now</button>
+            <button id="time-day" aria-pressed="false">Day</button>
+            <button id="time-night" aria-pressed="false">Night</button>
+          </div>
+          <div class="segmented" role="group" aria-label="Weather">
+            <button id="weather-clear" aria-pressed="true">Clear</button>
+            <button id="weather-storm" aria-pressed="false">Storm</button>
+            <button id="weather-haze" aria-pressed="false">Haze</button>
+          </div>
+        </div>
+        <div class="row">
+          <button id="fold" class="pill primary" aria-pressed="false">Show the code</button>
+          <span id="city-only" class="row">
+            <button id="tour" class="pill">Tour</button>
+            <button id="timelapse" class="pill">Timelapse</button>
+            <button id="reset" class="pill" hidden>Reset camera</button>
+          </span>
+          <details class="more">
+            <summary class="pill">More</summary>
+            <div class="sheet">
+              <div id="city-settings" class="sheet-group">
+                <div class="segmented" role="group" aria-label="Long press">
+                  <button id="press-meteor" aria-pressed="true">Meteor</button>
+                  <button id="press-fireworks" aria-pressed="false">Fireworks</button>
+                </div>
+                <button id="clouds" class="pill" aria-pressed="true">Clouds</button>
+                <label class="signs">
+                  <span>Sign board, a message a line</span>
+                  <textarea id="signs-input" rows="3" spellcheck="false"></textarea>
+                </label>
+              </div>
+              <button id="save" class="pill">Save the code as an image</button>
+              <p class="hint">Tap the city to fold it into its code. Drag to turn it, pinch or scroll to zoom, and long-press for a meteor or fireworks.</p>
+              <p class="hint">In the code: <code id="payload"></code></p>
+              <p class="hint"><a href="https://github.com/skylightlim/skyline-qr">Source, and the Android app</a></p>
+            </div>
+          </details>
+        </div>
+      </div>
+    </footer>
+  </main>
+  <script src="gpu.js"></script>
+  <script src="page.js"></script>
+  <script type="application/javascript" src="skylineqr-web.js"></script>
+</body>
+</html>

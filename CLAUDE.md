@@ -7,10 +7,18 @@ README.md beside it is all the context that needs.
 
 ## Build and test
 
-- `./gradlew test lint assembleDebug` runs every unit test, lint and the demo build.
+- `./gradlew test allTests lint assembleDebug` runs every unit test (the core's on the JVM and on
+  Wasm), lint and the demo build.
   `FlatColoursTest` scans hundreds of codes and takes about ten minutes; while iterating, run the
   other suites with `--tests` and leave it for the end.
-- Core logic lives in `skylineqr-core` (pure JVM) so it tests fast without a device.
+- Core logic lives in `skylineqr-core` (Kotlin Multiplatform: JVM and Wasm, sources in
+  `src/commonMain`) so it tests fast without a device and the website runs it too. No JVM APIs in
+  `commonMain`; platform needs go through `core/Platform.kt`.
+- The website is `skylineqr-web` (Kotlin/Wasm and the browser's WebGPU; see DESIGN.md, Website).
+  `./gradlew :skylineqr-web:wasmJsBrowserDevelopmentRun` serves it. It compiles the renderer's
+  platform-free files straight from skylineqr-compose, so they must stay free of Android and JVM
+  APIs; `WebRenderer.kt` and `gpu.js` mirror `CityRenderer.kt`, so keep them in step. Headless
+  Chromium here shows WebGPU canvases blank: read frames back with copyTextureToBuffer instead.
 - WGSL errors surface on the device as a `ValidationException` in logcat (tag `SkylineQR`) and the
   view falls back to the 2D code. WGSL reserves some ordinary words (`meta`, `from`). Check shader
   edits on the desktop first: compile `Wgsl.SOURCE` and `Wgsl.POST` with wgpu-py (naga), filling in
@@ -44,8 +52,9 @@ README.md beside it is all the context that needs.
 - **No code from Enzo Manuel Mangano's demos repo** (Cherry Blossom QR). Its licence forbids
   redistributing or porting it. Ideas are fine; code, constants and shader text are not.
 - every-qrcode is MIT: port freely, but note what was adapted in `NOTICE`.
-- Determinism: the planner uses `StrictMath` for transcendental functions and integer hashes, never
-  `Math`/`kotlin.math` or `Random`, so the same link builds the same city on the JVM and on Android.
+- Determinism: the planner uses `FdLibm` (StrictMath's bits, in Kotlin) for transcendental
+  functions and integer hashes, never `Math`/`kotlin.math` or `Random`, so the same link builds the
+  same city on the JVM, on Android and in the browser (`CrossPlatformCityTest`).
 - `GeneratorFingerprintTest` guards generator version 1. v1.0.0 (2026-11-20) was the first public
   release, so version 1 is frozen: a deliberate planner change (districts, inks, heights) adds a
   new generator version and leaves version 1 and its hashes alone.

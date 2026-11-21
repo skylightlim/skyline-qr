@@ -68,7 +68,7 @@ internal object SkyParts {
   fun shows(way: Float) = abs(way) < 1f
 
   /** How many clouds [city]'s clear sky has: five to eight, by its seed. */
-  fun fairCount(city: City) = 5 + Math.floorMod(city.identity.seed, 4)
+  fun fairCount(city: City) = 5 + city.identity.seed.mod(4)
 
   /**
    * Every weather shape for this frame. [lit] is the storm cloud the current bolt leaves, glowing

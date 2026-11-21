@@ -62,8 +62,8 @@ internal object FrameData {
     /** The night sky's: see [stars]. */
     stars: FloatArray = floatArrayOf(0f, 0f, 1f, 0f),
   ) {
-    System.arraycopy(pose.viewProjection, 0, out, 0, 16)
-    System.arraycopy(light, 0, out, 16, 16)
+    pose.viewProjection.copyInto(out, 0, 0, 16)
+    light.copyInto(out, 16, 0, 16)
     var o = 32
     fun put4(x: Float, y: Float, z: Float, w: Float) {
       out[o] = x
@@ -100,11 +100,11 @@ internal object FrameData {
     put(damage, damage[3])
     put(bolt, bolt[3])
     put(stars, stars[3])
-    System.arraycopy(screen, 0, out, o, Billboard.FLOATS)
+    screen.copyInto(out, o, 0, Billboard.FLOATS)
     o += Billboard.FLOATS
     // The flat code for the landmarks to turn into: four modules a float, five bits each, which a
     // float holds exactly.
-    System.arraycopy(code(city), 0, out, o, 4 * CODE_VEC4)
+    code(city).copyInto(out, o, 0, 4 * CODE_VEC4)
     o += 4 * CODE_VEC4
     check(o == out.size) { "frame uniform packed $o of ${out.size} floats" }
   }

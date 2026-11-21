@@ -99,7 +99,7 @@ internal class Tour(private val city: City, private val aspect: Float) {
       return Triple(atan2(foot[0], foot[2]), max(hypot(foot[0], foot[2]) + distance * 0.8f, city.plateHalf + TourScript.OUTSIDE), height)
     }
     // A compass bearing on the code as a map: north is -z, east +x.
-    val a = Math.toRadians(from.toDouble())
+    val a = from.toDouble() * (PI / 180)
     val x = foot[0] + sin(a).toFloat() * distance
     val z = foot[2] - cos(a).toFloat() * distance
     return Triple(atan2(x, z), max(hypot(x, z), city.plateHalf + TourScript.OUTSIDE), height)

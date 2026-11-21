@@ -15,5 +15,6 @@ jobs:
           distribution: temurin
           java-version: 17
       - uses: gradle/actions/setup-gradle@v6
-      # Unit tests, lint and the demo build. Device tests run on a real phone, not in CI.
-      - run: ./gradlew test lint assembleDebug
+      # Unit tests (the core's on the JVM and on Wasm), lint, the demo build and the website. Device
+      # tests run on a real phone, not in CI.
+      - run: ./gradlew test allTests lint assembleDebug :skylineqr-web:wasmJsBrowserDistribution

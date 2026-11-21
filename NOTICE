@@ -38,6 +38,35 @@ Every QR Code is distributed under this licence:
   SOFTWARE.
 
 ------------------------------------------------------------------------------
+QR encoder (skylineqr-core/.../core/QrMatrix.kt)
+------------------------------------------------------------------------------
+
+QrEncoder adapts ZXing's QR encoder (https://github.com/zxing/zxing,
+core/src/main/java/com/google/zxing/qrcode/encoder: Encoder, MatrixUtil and
+MaskUtil, version 3.5.3) into plain Kotlin, cut down to error correction M and
+symbol versions 1 to 6, so the browser can draw the same code (2026-11-21).
+Modified from the original: rewritten in Kotlin, with only the modes, levels
+and versions SkylineQR uses. ZXing is Copyright 2007-2024 ZXing authors and
+distributed under the Apache License 2.0
+(https://www.apache.org/licenses/LICENSE-2.0).
+
+------------------------------------------------------------------------------
+Maths (skylineqr-core/.../core/FdLibm.kt)
+------------------------------------------------------------------------------
+
+FdLibm adapts sin, cos, tan, atan, atan2, hypot and pow from fdlibm 5.3
+(https://www.netlib.org/fdlibm/), the library behind java.lang.StrictMath,
+into Kotlin, so the planner's maths gives the same bits in the browser as on
+the phone. fdlibm is distributed under this notice:
+
+  Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.
+
+  Developed at SunSoft, a Sun Microsystems, Inc. business.
+  Permission to use, copy, modify, and distribute this
+  software is freely granted, provided that this notice
+  is preserved.
+
+------------------------------------------------------------------------------
 Icons (app/src/main/kotlin/com/skylightlim/skylineqr/ui/Icons.kt)
 ------------------------------------------------------------------------------
 
