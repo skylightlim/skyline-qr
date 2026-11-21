@@ -415,6 +415,7 @@ private class Page {
     Dom.setHidden("notice", false)
     showControls()
     drawFallback()
+    Dom.loaded()
   }
 
   /** The code alone, drawn in the colours of the flat city at this hour, as the app's fallback. */

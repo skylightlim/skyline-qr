@@ -130,6 +130,8 @@ internal class CityRenderer(
   private val onFailure: (Throwable) -> Unit,
   /** Runs on the main thread when lightning strikes or a meteor falls or lands. */
   private val onEvent: (SkylineEvent) -> Unit = {},
+  /** Runs on the main thread once, when the first frame with a city in it is on screen. */
+  private val onFirstCity: () -> Unit = {},
 ) {
 
   @Volatile
@@ -193,6 +195,9 @@ internal class CityRenderer(
   @Volatile
   var framesDrawn = 0
     private set
+
+  /** Whether a frame with a city in it has been presented, for [onFirstCity]. */
+  private var cityShown = false
 
   private val thread = HandlerThread("SkylineQR-WebGPU", android.os.Process.THREAD_PRIORITY_DISPLAY).apply { start() }
   private val handler = Handler(thread.looper)
@@ -807,6 +812,10 @@ internal class CityRenderer(
         surface.present()
       }
       framesDrawn++
+      if (!cityShown && current != null && uploaded === current) {
+        cityShown = true
+        main.post { onFirstCity() }
+      }
 
       if (shot != null) {
         snapshotRequest = null

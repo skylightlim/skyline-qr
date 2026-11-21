@@ -3,6 +3,7 @@
 'use strict';
 
 const SkylinePage = (() => {
+  const POSTER_MIN_MILLIS = 1200;
   const stage = document.getElementById('stage');
   const canvases = [document.getElementById('city'), document.getElementById('flat')];
   const resizers = [];
@@ -111,7 +112,24 @@ const SkylinePage = (() => {
     }
   }
 
-  return { onResize, onPointer, onWheel, setTheme, codeBegin, codeModule, codeDraw };
+  // The loading poster stays until the first frame of the city has drawn, or the flat code has
+  // taken its place, and for at least a moment so it never just flickers past.
+  const posterShownAt = performance.now();
+  let posterGone = false;
+  function loaded() {
+    if (posterGone) return;
+    posterGone = true;
+    const poster = document.getElementById('poster');
+    if (!poster) return;
+    setTimeout(() => {
+      poster.classList.add('gone');
+      poster.addEventListener('transitionend', () => poster.remove(), { once: true });
+      // Reduced motion has no transition to end.
+      setTimeout(() => poster.remove(), 1000);
+    }, Math.max(0, POSTER_MIN_MILLIS - (performance.now() - posterShownAt)));
+  }
+
+  return { onResize, onPointer, onWheel, setTheme, codeBegin, codeModule, codeDraw, loaded };
 })();
 globalThis.SkylinePage = SkylinePage;
 
@@ -123,4 +141,5 @@ setTimeout(() => {
   if (!input || input.value || !notice) return;
   notice.textContent = "This browser can't run Skyline QR. Open the page in a recent Chrome, Edge, Safari or Firefox.";
   notice.hidden = false;
+  SkylinePage.loaded();
 }, 10000);

@@ -38,8 +38,8 @@ from PIL import Image
 
 png, root = sys.argv[1], sys.argv[2]
 img = Image.open(png).convert("RGB")
-# 1080 wide: sharp on a phone held upright, and about 200 KB as WebP.
-w = 1080
+# 900 wide at quality 70: sharp enough on a phone held upright, and about 250 KB as WebP.
+w = 900
 img = img.resize((w, round(img.height * w / img.width)), Image.LANCZOS)
 for out in (
     f"{root}/skylineqr-web/src/wasmJsMain/resources/kl-poster.webp",
@@ -47,6 +47,6 @@ for out in (
 ):
     import os
     os.makedirs(os.path.dirname(out), exist_ok=True)
-    img.save(out, "WEBP", quality=82, method=6)
+    img.save(out, "WEBP", quality=70, method=6)
     print(out, img.size, os.path.getsize(out), "bytes")
 PY
