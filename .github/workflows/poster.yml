@@ -4,9 +4,6 @@ name: Poster
 # data and commits it to the branch it ran on. Run it by hand from the Actions tab.
 on:
   workflow_dispatch:
-  push:
-    branches: [claude/project-thread-3zjiph]
-    paths: [tools/poster/**, .github/workflows/poster.yml]
 
 permissions:
   contents: write
