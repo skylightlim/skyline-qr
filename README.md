@@ -107,7 +107,7 @@ flat 2D code takes its place. See [docs/DESIGN.md](docs/DESIGN.md) for the full 
 // settings.gradle.kts
 dependencyResolutionManagement { repositories { maven("https://jitpack.io") } }
 // build.gradle.kts
-implementation("com.github.skylightlim.skyline-qr:skylineqr-compose:v1.0.0")
+implementation("com.github.skylightlim.skyline-qr:skylineqr-compose:v1.1.0")
 ```
 
 ```kotlin
