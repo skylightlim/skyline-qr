@@ -31,6 +31,9 @@ internal object Gpu {
 
   fun resize(width: Int, height: Int) = gpuResize(width, height)
 
+  /** The postcard's photo: no sky behind the city, only the clear colour. */
+  fun photoMode(on: Boolean) = gpuPhotoMode(on)
+
   fun uploadCity(instances: FloatArray, floats: Int) = gpuUploadCity(copy(instances, floats), floats)
 
   fun writeFrame(values: FloatArray) {
@@ -73,6 +76,9 @@ internal object Gpu {
     }
   }
 }
+
+@JsFun("(on) => SkylineGpu.photoMode(on)")
+private external fun gpuPhotoMode(on: Boolean)
 
 @JsFun("(n) => new Float32Array(n)")
 private external fun newF32(n: Int): JsAny
