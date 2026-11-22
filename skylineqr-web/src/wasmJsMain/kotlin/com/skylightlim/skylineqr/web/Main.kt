@@ -4,6 +4,7 @@ package com.skylightlim.skylineqr.web
 
 import com.skylightlim.skylineqr.city.Atmospheres
 import com.skylightlim.skylineqr.city.City
+import com.skylightlim.skylineqr.city.CityColours
 import com.skylightlim.skylineqr.city.CityPlanner
 import com.skylightlim.skylineqr.city.CityPreset
 import com.skylightlim.skylineqr.city.FlatColours
@@ -23,7 +24,7 @@ import kotlin.math.ln
 
 /**
  * The website (2026-11-21): the demo app's screen in a browser. The city, a link box below it, and the
- * app's controls: Now, Day or Night; Clear, Storm or Haze; the tour, the timelapse, what a long
+ * app's controls: Now, Day or Night; Clear, Storm or Haze; colourful or grey blue; the tour, the timelapse, what a long
  * press does, the clouds and the sign board. Tap to fold the city into its code and back; drag to
  * turn it, pinch or scroll to zoom, long-press for a meteor or fireworks. Where WebGPU cannot run,
  * the flat code is drawn on a 2D canvas instead, so the link still scans.
@@ -38,6 +39,7 @@ private class Page {
   private var link = DEFAULT_LINK
   private var time = TimeOfDay.AUTO
   private var weather = Weather.CLEAR
+  private var colours = CityColours.COLOURFUL
   private var longPress = LongPress.METEOR
   private var flat = false
   private var fallback = false
@@ -64,6 +66,8 @@ private class Page {
     Dom.onClick("weather-clear") { setWeather(Weather.CLEAR) }
     Dom.onClick("weather-storm") { setWeather(Weather.STORM) }
     Dom.onClick("weather-haze") { setWeather(Weather.HAZE) }
+    Dom.onClick("colours-colourful") { setColours(CityColours.COLOURFUL) }
+    Dom.onClick("colours-grey-blue") { setColours(CityColours.GREY_BLUE) }
     Dom.onClick("press-meteor") { setLongPress(LongPress.METEOR) }
     Dom.onClick("press-fireworks") { setLongPress(LongPress.FIREWORKS) }
     Dom.onClick("clouds") {
@@ -89,6 +93,7 @@ private class Page {
     build(link)
     setTime(time)
     setWeather(weather)
+    setColours(colours)
     setLongPress(longPress)
     Dom.setPressed("clouds", true)
     showControls()
@@ -125,6 +130,15 @@ private class Page {
     Dom.setPressed("time-day", value == TimeOfDay.DAY)
     Dom.setPressed("time-night", value == TimeOfDay.NIGHT)
     refreshTheme()
+  }
+
+  /** The city's inks (2026-11-22, as in the app): colourful or grey blue, the flat code's too. */
+  private fun setColours(value: CityColours) {
+    colours = value
+    renderer.colours = value
+    Dom.setPressed("colours-colourful", value == CityColours.COLOURFUL)
+    Dom.setPressed("colours-grey-blue", value == CityColours.GREY_BLUE)
+    drawFallback()
   }
 
   private fun setWeather(value: Weather) {
@@ -425,7 +439,7 @@ private class Page {
     val air = air()
     val n = city.modules
     Dom.codeBegin(n, css(FlatColours.paper(air)))
-    for (row in 0 until n) for (col in 0 until n) Dom.codeModule(col, row, css(FlatColours.module(city, col, row, air)))
+    for (row in 0 until n) for (col in 0 until n) Dom.codeModule(col, row, css(FlatColours.module(city, col, row, air, colours)))
     Dom.codeDraw("flat", QUIET)
   }
 

@@ -100,6 +100,16 @@ with no server involved.
   module under both formulas. Kuala Lumpur's arrangement was chosen by scanning: the version 3
   test code misses at 7.7 and 8.9 px a module whatever the inks, and a poor arrangement misses at
   8.6 too, which the sweep samples; check a new one at every tenth of a pixel from 7.5 to 9.5.
+- Grey blue (2026-11-22, at the user's request: "make the city in grey, blueish, not this
+  colourful option"): a second set of fourteen inks, `CityColours.GREY_BLUE`, beside the
+  colourful ones (`COLOURFUL`, still the default). Slate, smoke, dusk, denim, steel, storm and mist,
+  two shades each, in the same places as the Pantone hues, so every module keeps its ink index and
+  each of Kuala Lumpur's districts still reads as its own shade. They sit on the same two
+  brightnesses and are solved the same way, so the code scans the same (`FlatColoursTest` scans
+  both sets; the device test renders both). Presentation only, like the hour: the city, its
+  districts, its identity and generator version 1's fingerprints do not change. The app's settings
+  card and the website's More sheet offer it as "City colours: Colourful / Grey blue"; the app
+  keeps the choice. The paper still follows the hour.
 
 ## The city
 
