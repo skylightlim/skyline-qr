@@ -31,6 +31,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -53,8 +54,12 @@ import com.skylightlim.skylineqr.core.PaymentCode
 import com.skylightlim.skylineqr.nfc.card.Card
 import com.skylightlim.skylineqr.nfc.card.CardContent
 import com.skylightlim.skylineqr.theme.SkylineQRTheme
+import java.text.DateFormat
+import java.util.Date
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 private const val DEFAULT_URL = "https://www.instagram.com/chenyuulim/"
 
@@ -119,6 +124,41 @@ fun SkylineScreen(
   }
   val air = Atmospheres.at(time, weather, clock)
 
+  // The postcard (2026-11-22): the city as the camera sees it, with the code in its corner.
+  val scope = rememberCoroutineScope()
+  var postcarding by remember { mutableStateOf(false) }
+  fun sharePostcard() {
+    if (postcarding) return
+    postcarding = true
+    scope.launch {
+      try {
+        // The code's size picks the layout; the code is then drawn at exactly that size.
+        val modules = (qr.codeBitmap(1) ?: return@launch).width - 2 * Postcard.QUIET
+        val layout = Postcard.layout(modules)
+        val code = qr.codeBitmap(layout.modulePx) ?: return@launch
+        // Without WebGPU there is no city to photograph: the postcard shows the code alone.
+        val photo = if (qr.fallback) null else withTimeoutOrNull(SNAPSHOT_MILLIS) { qr.snapshot(flat = false) }
+        if (photo == null && !qr.fallback) {
+          snackbar.showSnackbar("Couldn’t take the postcard’s photo")
+          return@launch
+        }
+        val card =
+          Postcard.draw(
+            photo,
+            code,
+            layout,
+            paper = argb(air.paper),
+            ink = argb(air.ink),
+            title = shownTitle,
+            caption = "Kuala Lumpur · ${momentLabel(time, weather)} · ${DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date())}",
+          )
+        Postcard.share(context, card, shownTitle)
+      } finally {
+        postcarding = false
+      }
+    }
+  }
+
   val darkPanel = air.night > 0.5f || weather == Weather.STORM
   val sky = Color(air.skyHorizon[0], air.skyHorizon[1], air.skyHorizon[2])
   // The loading poster: until the first city is on screen, and at least a moment so it never just
@@ -167,6 +207,10 @@ fun SkylineScreen(
           onTimelapse = {
             settingsOpen = false
             qr.startTimelapse { completed -> if (completed) time = TimeOfDay.NIGHT }
+          },
+          onPostcard = {
+            settingsOpen = false
+            sharePostcard()
           },
           onDismiss = { settingsOpen = false },
         )
@@ -241,6 +285,34 @@ fun SkylineScreen(
 
 private const val POSTER_MIN_MILLIS = 1200L
 private const val POSTER_FADE_MILLIS = 600
+
+/** A frame takes a few milliseconds; past this the GPU has gone and the postcard gives up. */
+private const val SNAPSHOT_MILLIS = 5_000L
+
+/** A colour as ARGB. */
+private fun argb(c: FloatArray): Int {
+  fun ch(v: Float) = (v.coerceIn(0f, 1f) * 255f + 0.5f).toInt()
+  return (0xff shl 24) or (ch(c[0]) shl 16) or (ch(c[1]) shl 8) or ch(c[2])
+}
+
+/** The hour and weather in a word or two, for the postcard: Now says what the clock says. */
+private fun momentLabel(time: TimeOfDay, weather: Weather): String {
+  val hour =
+    if (time != TimeOfDay.AUTO) time.label
+    else
+      when (Atmospheres.clockMinute().toInt() / 60) {
+        in 5..6 -> "Dawn"
+        in 7..17 -> "Day"
+        in 18..19 -> "Dusk"
+        else -> "Night"
+      }
+  return when (weather) {
+    Weather.CLEAR -> hour
+    Weather.RAIN -> "$hour, rain"
+    Weather.HAZE -> "$hour, haze"
+    Weather.STORM -> "$hour, storm"
+  }
+}
 
 /** Now follows the clock through dawn and dusk; the fixed choices are just day and night. */
 private val TIMES = listOf(TimeOfDay.AUTO, TimeOfDay.DAY, TimeOfDay.NIGHT)

@@ -184,12 +184,19 @@ private enum class Page { MAIN, SIGNS, LICENCES }
 
 /**
  * The settings card (2026-11-09, at the user's request), over the city like the new-card popup and
- * opening out of the same corner: take the tour or the timelapse, the city's colours, what a long press does, the clouds, the sign
+ * opening out of the same corner: take the tour or the timelapse, share the city as a postcard, the
+ * city's colours, what a long press does, the clouds, the sign
  * board's messages (a page of their own) and the licences (another). No title: the tour comes
  * first. A tap anywhere outside the card closes it; back steps out of a page first.
  */
 @Composable
-internal fun SettingsCard(settings: AppSettings, onTour: () -> Unit, onTimelapse: () -> Unit, onDismiss: () -> Unit) {
+internal fun SettingsCard(
+  settings: AppSettings,
+  onTour: () -> Unit,
+  onTimelapse: () -> Unit,
+  onPostcard: () -> Unit,
+  onDismiss: () -> Unit,
+) {
   var page by rememberSaveable { mutableStateOf(Page.MAIN) }
   val motion = MaterialTheme.motionScheme
   val colours = MaterialTheme.colorScheme
@@ -232,7 +239,7 @@ internal fun SettingsCard(settings: AppSettings, onTour: () -> Unit, onTimelapse
           label = "settings page",
         ) { shown ->
           when (shown) {
-            Page.MAIN -> MainPage(settings, onTour, onTimelapse, open = { page = it })
+            Page.MAIN -> MainPage(settings, onTour, onTimelapse, onPostcard, open = { page = it })
             Page.SIGNS -> SignsPage(settings, back = { page = Page.MAIN })
             Page.LICENCES -> LicencesPage(back = { page = Page.MAIN })
           }
@@ -243,7 +250,7 @@ internal fun SettingsCard(settings: AppSettings, onTour: () -> Unit, onTimelapse
 }
 
 @Composable
-private fun MainPage(settings: AppSettings, onTour: () -> Unit, onTimelapse: () -> Unit, open: (Page) -> Unit) {
+private fun MainPage(settings: AppSettings, onTour: () -> Unit, onTimelapse: () -> Unit, onPostcard: () -> Unit, open: (Page) -> Unit) {
   Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
     // The tour, and beside it the timelapse (2026-11-20, at the user's request): the city from day
     // to night in fifteen seconds. The tour stays the filled one and takes the room it needs.
@@ -273,6 +280,8 @@ private fun MainPage(settings: AppSettings, onTour: () -> Unit, onTimelapse: () 
         Text("Timelapse", style = MaterialTheme.typography.titleMedium)
       }
     }
+    // The city as a postcard (2026-11-22, at the user's request), through the share sheet.
+    SettingRow(SkylineIcons.Share, "Share as a postcard", note = "The city as it looks now, with its code", onClick = onPostcard)
     // The city's colours (2026-11-22, at the user's request): the colourful inks or quiet grey blue.
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
       Text("City colours", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp))
