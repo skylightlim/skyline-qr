@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.Velocity
 import com.skylightlim.skylineqr.city.Atmosphere
 import com.skylightlim.skylineqr.city.Atmospheres
 import com.skylightlim.skylineqr.city.City
+import com.skylightlim.skylineqr.city.CityColours
 import com.skylightlim.skylineqr.city.CityPlanner
 import com.skylightlim.skylineqr.city.CityPreset
 import com.skylightlim.skylineqr.city.TimeOfDay
@@ -260,6 +261,7 @@ class SkylineQrState {
   internal var city: City? = null
   internal var time = TimeOfDay.AUTO
   internal var weather = Weather.CLEAR
+  internal var colours = CityColours.COLOURFUL
 
   internal fun atmosphere(): Atmosphere = Atmospheres.at(time, weather, Atmospheres.clockMinute())
 
@@ -313,7 +315,7 @@ class SkylineQrState {
    * The code alone, drawn without the GPU: [modulePx] pixels a module, with a four-module quiet
    * zone, in the colours of the flat city at this hour. Null before the first city.
    */
-  fun codeBitmap(modulePx: Int = 16): Bitmap? = city?.let { FlatCode.bitmap(it, atmosphere(), modulePx) }
+  fun codeBitmap(modulePx: Int = 16): Bitmap? = city?.let { FlatCode.bitmap(it, atmosphere(), modulePx, colours) }
 }
 
 @Composable fun rememberSkylineQrState(): SkylineQrState = remember { SkylineQrState() }
@@ -323,7 +325,8 @@ class SkylineQrState {
  *
  * Tap to switch between the city and the code. In the city, drag to turn it, pinch to zoom, and
  * long-press for [longPress]: a meteor on that spot (it rebuilds itself) or fireworks going up from
- * it. [clouds] off blows the clouds away (and back in when it is on);
+ * it. [clouds] off blows the clouds away (and back in when it is on); [colours] draws the towers
+ * and the code in the colourful inks or the grey blue ones, without changing the city;
  * [SkylineQrState.resetCamera] puts the camera back, [SkylineQrState.startTour] flies it past
  * every landmark, and [SkylineQrState.startTimelapse] runs it from day to night. The same [url], [identityScope], [generatorVersion] and [city]
  * always build the same city; [time] and [weather] only light it. [city] is Kuala Lumpur, with its
@@ -345,6 +348,7 @@ fun SkylineQrCode(
   haptics: Boolean = true,
   billboard: List<String> = emptyList(),
   clouds: Boolean = true,
+  colours: CityColours = CityColours.COLOURFUL,
   longPress: LongPress = LongPress.METEOR,
   onEvent: (SkylineEvent) -> Unit = {},
 ) {
@@ -368,6 +372,7 @@ fun SkylineQrCode(
   }
   state.time = time
   state.weather = weather
+  state.colours = colours
 
   val context = LocalContext.current
   val calm = remember(context) { animationsOff(context) }
@@ -467,6 +472,7 @@ fun SkylineQrCode(
           it,
           air,
           Modifier.align(Alignment.Center).fillMaxWidth(0.9f).aspectRatio(1f),
+          colours,
         )
       }
     }
@@ -488,6 +494,7 @@ fun SkylineQrCode(
   SideEffect {
     renderer.calm = calm
     renderer.clouds = clouds
+    renderer.colours = colours
     renderer.city = current
     renderer.time = time
     renderer.weather = weather

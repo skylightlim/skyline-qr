@@ -3,6 +3,7 @@ package com.skylightlim.skylineqr.render
 import com.skylightlim.skylineqr.city.Atmosphere
 import com.skylightlim.skylineqr.city.Atmospheres
 import com.skylightlim.skylineqr.city.City
+import com.skylightlim.skylineqr.city.CityColours
 import com.skylightlim.skylineqr.city.CityPlanner
 import com.skylightlim.skylineqr.city.Festivals
 import com.skylightlim.skylineqr.city.TimeOfDay
@@ -68,6 +69,14 @@ internal class WebRenderer(
 
   /** Whether the weather's clouds show; see CityRenderer.clouds. */
   var clouds = true
+    set(value) {
+      if (field == value) return
+      field = value
+      wake()
+    }
+
+  /** Which inks the towers and the code take; see CityRenderer.colours. */
+  var colours = CityColours.COLOURFUL
     set(value) {
       if (field == value) return
       field = value
@@ -710,6 +719,7 @@ internal class WebRenderer(
       bolt = floatArrayOf(boltX, boltZ, boltTop, if (boltAimed && flash > 0f) 1f else 0f),
       screen = screen.also { board.state(seconds, calm, it) },
       stars = FrameData.stars(city, air, height),
+      colours = colours,
     )
     Gpu.writeFrame(frame)
   }

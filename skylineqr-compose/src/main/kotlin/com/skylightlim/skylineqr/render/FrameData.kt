@@ -2,6 +2,7 @@ package com.skylightlim.skylineqr.render
 
 import com.skylightlim.skylineqr.city.Atmosphere
 import com.skylightlim.skylineqr.city.City
+import com.skylightlim.skylineqr.city.CityColours
 import com.skylightlim.skylineqr.city.FlatColours
 import com.skylightlim.skylineqr.city.Materials
 import kotlin.math.min
@@ -40,7 +41,7 @@ internal object FrameData {
    * struct describes them; [screen] is the billboard's, from [Billboard.state]. [raising] is
    * [Morph.raising]: the fold is on its way from the code back to the city. [hazeFront] is how far
    * haze has rolled across the plate as it comes, 0 to 1; [wind] is how strongly haze's wind
-   * streaks show.
+   * streaks show. [colours] picks the inks the towers and the code take.
    */
   fun pack(
     out: FloatArray,
@@ -61,6 +62,7 @@ internal object FrameData {
     screen: FloatArray,
     /** The night sky's: see [stars]. */
     stars: FloatArray = floatArrayOf(0f, 0f, 1f, 0f),
+    colours: CityColours = CityColours.COLOURFUL,
   ) {
     pose.viewProjection.copyInto(out, 0, 0, 16)
     light.copyInto(out, 16, 0, 16)
@@ -94,7 +96,7 @@ internal object FrameData {
     put(materials.vehicle, wind)
     for (i in 0 until 32) put4(materials.landmarks[i * 3], materials.landmarks[i * 3 + 1], materials.landmarks[i * 3 + 2], 0f)
     // Each ink from FlatColours itself, so the screen shows exactly the code its tests scan.
-    for (i in 0 until FlatColours.INKS) put(FlatColours.ink(i))
+    for (i in 0 until FlatColours.INKS) put(FlatColours.ink(i, colours))
     put4(city?.plateHalf ?: 20f, city?.maxHeight ?: 4f, if (calm) 0.45f else 1f, pose.shiftY)
     put(meteor, meteor[3])
     put(damage, damage[3])

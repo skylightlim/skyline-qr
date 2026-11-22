@@ -150,6 +150,7 @@ fun SkylineScreen(
       modifier = Modifier.fillMaxSize(),
       billboard = settings.signs,
       clouds = settings.clouds,
+      colours = settings.colours,
       longPress = settings.longPress,
     )
 
