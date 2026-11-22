@@ -538,6 +538,18 @@ with no server involved.
   the App Links filter and `site/`). The page published on `skylightlim.github.io` on 2026-11-06
   was left as it is; the app no longer opens its links. Text shared into the app still makes a
   new card.
+- The postcard (2026-11-22, at the user's request: "share the current qr code as a postcard"):
+  "Share as a postcard" in the settings card, under the tour, closes the card and opens the share
+  sheet with a 1080 by 1350 PNG (`ui/Postcard.kt`). On the flat code's paper for the hour: the
+  city as the camera sees it (`snapshot(flat = false)`, its middle cut to fit, round-cornered),
+  and beneath it the card's title, "Kuala Lumpur · the hour (and weather) · the date" and "Scan the
+  code to open it", with the code in the corner at the paper's colours. The code is drawn by
+  `codeBitmap` at whole pixels a module (about 340 px across with its quiet zone, never under
+  3 px a module) and placed unscaled, its modules level with the photo's edges, and nothing covers
+  its quiet zone (`PostcardLayoutTest`), so it scans as the flat code does. If the code was showing,
+  the snapshot stands the city up at once. Without WebGPU the frame shows the code alone, large.
+  The image is written to the cache (earlier ones cleared) and handed over by a FileProvider, so
+  only the chosen app can read it. Not on the website: it keeps no save or share of images.
 - The default link is the user's Instagram, `https://www.instagram.com/chenyuulim/` (2026-11-06).
 
 ## Website

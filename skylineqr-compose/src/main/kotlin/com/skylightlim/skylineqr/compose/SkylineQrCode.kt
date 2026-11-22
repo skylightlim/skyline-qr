@@ -300,10 +300,11 @@ class SkylineQrState {
 
   /**
    * The next frame as a bitmap. By default the city folds flat first, so the image scans; with
-   * [flat] false it is the city exactly as it looks now, for a postcard. Null before the first city.
+   * [flat] false it is the city as the camera sees it now, for a postcard: if the code was showing,
+   * the city stands up again at once for it. Null before the first city.
    */
   suspend fun snapshot(flat: Boolean = true): Bitmap? {
-    if (flat) this.flat = true
+    this.flat = flat
     val renderer = renderer
     if (fallback || renderer == null) return codeBitmap()
     return suspendCancellableCoroutine { continuation -> renderer.requestSnapshot(flat) { continuation.resume(it) } }
