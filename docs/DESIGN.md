@@ -559,7 +559,7 @@ with no server involved.
   its quiet zone (`PostcardLayoutTest`), so it scans as the flat code does. If the code was showing,
   the snapshot stands the city up at once. Without WebGPU the frame shows the code alone, large.
   The image is written to the cache (earlier ones cleared) and handed over by a FileProvider, so
-  only the chosen app can read it. Not on the website: it keeps no save or share of images.
+  only the chosen app can read it. The website has it too (2026-11-22; see Website).
 - The default link is the user's Instagram, `https://www.instagram.com/chenyuulim/` (2026-11-06).
 
 ## Website
@@ -581,10 +581,23 @@ Added 2026-11-21, at the user's request ("make this app into a website").
   and gpu.js builds the same passes with the browser's WebGPU; a change to what CityRenderer draws
   or when belongs in both.
 - The page (redesigned 2026-11-21, at the user's request, after the layout of tree.icqr.com in
-  our own look): the city full screen, the wordmark top left and an about button top right; below,
-  one wide link field with a square Tour button, then Now, Day and Night as three equal buttons and
-  a square button for the rest (weather, what a long press does, the clouds, the timelapse, the
-  sign board). Tapping the city folds it into its code. No share links, as in the app.
+  our own look): the city full screen and the wordmark top left; below, one wide link field with a
+  square Tour button, then Now, Day and Night as three equal buttons and a square button for the
+  rest (the postcard, weather with the clouds beside it, city colours, what a long press does, the
+  timelapse, the sign board). Tapping the city folds it into its code. No share links, as in the app.
+- Polish (2026-11-22, at the user's request): no "Open source" badge and no about button; text in
+  Inter (OFL, self-hosted, Latin only), the clean sans tree.icqr.com uses; the settings sheet flat,
+  a solid sheet with a hairline edge and no shadow or blur inside or out; every button sinks under
+  a press and springs back, eases between states and pops as it becomes the chosen one, and the
+  sheet, the controls and the Stop button ease in (none of it with reduced motion). The sign board
+  starts with 马大牛逼 alone.
+- The postcard (2026-11-22, at the user's request, as the app's): "Share as a postcard" in the
+  sheet draws the app's 1080 by 1350 layout (page.js mirrors `ui/Postcard.kt`; keep them in step)
+  with the link as its title, from the next frame read back with copyTextureToBuffer (gpu.js
+  `snapshot`); showing the code, the city stands up at once first, and without WebGPU the frame
+  shows the code alone. It opens in a preview with Save (a PNG download) and, where the browser can
+  share files (`navigator.canShare`), Share, which opens the system share sheet. The preview's own
+  buttons give Share a fresh tap, which Safari needs after the wait for the frame.
 - WebGPU is tried only where it can't take the tab down: Firefox-based browsers (Zen among them)
   get the flat code unless opened with `?webgpu=1`, because their WebGPU crashed the page; a
   request that hangs, or a first frame that never finishes, also falls back. Without WebGPU, the flat code on a

@@ -24,8 +24,8 @@ import kotlin.math.ln
 
 /**
  * The website (2026-11-21): the demo app's screen in a browser. The city, a link box below it, and the
- * app's controls: Now, Day or Night; Clear, Storm or Haze; colourful or grey blue; the tour, the timelapse, what a long
- * press does, the clouds and the sign board. Tap to fold the city into its code and back; drag to
+ * app's controls: Now, Day or Night; Clear, Storm or Haze and the clouds; colourful or grey blue; the tour, the
+ * timelapse, what a long press does, the sign board and the postcard. Tap to fold the city into its code and back; drag to
  * turn it, pinch or scroll to zoom, long-press for a meteor or fireworks. Where WebGPU cannot run,
  * the flat code is drawn on a 2D canvas instead, so the link still scans.
  */
@@ -75,6 +75,7 @@ private class Page {
       Dom.setPressed("clouds", renderer.clouds)
     }
     Dom.onClick("tour") { startTour() }
+    Dom.onClick("postcard") { postcard() }
     Dom.onClick("timelapse") { startTimelapse() }
     Dom.onClick("reset") { resetCamera() }
     Dom.onClick("stop") {
@@ -176,9 +177,9 @@ private class Page {
     setFlat(!flat)
   }
 
-  private fun setFlat(value: Boolean) {
+  private fun setFlat(value: Boolean, instantly: Boolean = false) {
     flat = value
-    renderer.setFlat(value)
+    renderer.setFlat(value, instantly)
     Dom.setLabel("stage", if (value) "QR code for $link. Tap to show the city." else "City QR code for $link. Tap to show the code.")
   }
 
@@ -235,6 +236,7 @@ private class Page {
     Dom.setHidden("city-only", fallback)
     Dom.setHidden("city-settings", fallback)
     Dom.setHidden("tour", fallback)
+    Dom.setHidden("clouds", fallback)
   }
 
   // The camera: the app's drag, pinch, momentum and soft limits.
@@ -435,19 +437,60 @@ private class Page {
   /** The code alone, drawn in the colours of the flat city at this hour, as the app's fallback. */
   private fun drawFallback() {
     if (!fallback) return
-    val city = city ?: return
+    if (!giveCode()) return
+    Dom.codeDraw("flat", QUIET)
+  }
+
+  /** Hands page.js the code in the flat city's colours at this hour; false before there is a city. */
+  private fun giveCode(): Boolean {
+    val city = city ?: return false
     val air = air()
     val n = city.modules
     Dom.codeBegin(n, css(FlatColours.paper(air)))
     for (row in 0 until n) for (col in 0 until n) Dom.codeModule(col, row, css(FlatColours.module(city, col, row, air, colours)))
-    Dom.codeDraw("flat", QUIET)
+    return true
+  }
+
+  /**
+   * The postcard (2026-11-22, as the app's): the city as the camera sees it, with the link, the
+   * place, the hour and the date beneath and the code in the corner. Showing the code, the city
+   * stands up at once for its photo; without WebGPU the postcard shows the code alone.
+   */
+  private fun postcard() {
+    if (touring || timelapsing || !giveCode()) return
+    if (!fallback && flat) setFlat(false, instantly = true)
+    Dom.postcard(shownLink(link), "Kuala Lumpur · ${momentLabel()}", css(air().ink), QUIET, withPhoto = !fallback)
+  }
+
+  /** The hour and weather in a word or two, as the app's postcard says them: Now says what the clock says. */
+  private fun momentLabel(): String {
+    val hour =
+      when (time) {
+        TimeOfDay.DAWN -> "Dawn"
+        TimeOfDay.DAY -> "Day"
+        TimeOfDay.DUSK -> "Dusk"
+        TimeOfDay.NIGHT -> "Night"
+        TimeOfDay.AUTO ->
+          when (Atmospheres.clockMinute().toInt() / 60) {
+            in 5..6 -> "Dawn"
+            in 7..17 -> "Day"
+            in 18..19 -> "Dusk"
+            else -> "Night"
+          }
+      }
+    return when (weather) {
+      Weather.CLEAR -> hour
+      Weather.RAIN -> "$hour, rain"
+      Weather.HAZE -> "$hour, haze"
+      Weather.STORM -> "$hour, storm"
+    }
   }
 
   private companion object {
     const val DEFAULT_LINK = "https://github.com/skylightlim/skyline-qr"
 
-    /** The app's sign board, as it ships. */
-    val DEFAULT_SIGNS = listOf("马大牛逼", "tarumt #1", "i need argon")
+    /** The sign board's one message on the website (2026-11-22, at the user's request). */
+    val DEFAULT_SIGNS = listOf("马大牛逼")
 
     const val QUIET = 4
     const val LONG_PRESS_MILLIS = 500
@@ -458,6 +501,9 @@ private class Page {
 
     /** Compose's exponentialDecay(frictionMultiplier = 2.5f), which the app coasts with. */
     const val COAST_FRICTION = 4.2f * 2.5f
+
+    /** The link as the postcard prints it: without its scheme or a trailing slash. */
+    fun shownLink(link: String) = link.substringAfter("://").removePrefix("www.").trimEnd('/')
 
     fun css(c: FloatArray): String {
       fun channel(v: Float) = (v.coerceIn(0f, 1f) * 255f + 0.5f).toInt()

@@ -147,3 +147,13 @@ Inspiration (ideas only, no code)
   visual reference for the supertall's shape. None of its geometry is used; the supertall is
   built from boxes in code (city/KualaLumpur.kt).
 - Every QR Code, as above.
+
+------------------------------------------------------------------------------
+Font (skylineqr-web/src/wasmJsMain/resources/inter.woff2)
+------------------------------------------------------------------------------
+
+The website's text is set in Inter 4 (https://github.com/rsms/inter), its
+Latin subset as a variable WOFF2 from @fontsource-variable/inter 5.3.0,
+unmodified. Copyright 2016 The Inter Project Authors. Inter is distributed
+under the SIL Open Font License, Version 1.1; the full licence is beside the
+font, in inter-LICENSE.txt.
