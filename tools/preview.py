@@ -111,7 +111,7 @@ blocks = device.create_render_pipeline(
     fragment={"module": skyline, "entry_point": "blockFragment", "targets": [{"format": HDR}]})
 sky = device.create_render_pipeline(
     layout=scene_pl, vertex={"module": skyline, "entry_point": "skyVertex"}, primitive={"topology": "triangle-list"},
-    depth_stencil=depth(False, "always"), multisample={"count": SAMPLES},
+    depth_stencil=depth(False, "less-equal"), multisample={"count": SAMPLES},
     fragment={"module": skyline, "entry_point": "skyFragment", "targets": [{"format": HDR}]})
 alpha = {"color": {"operation": "add", "src_factor": "src-alpha", "dst_factor": "one-minus-src-alpha"},
          "alpha": {"operation": "add", "src_factor": "one", "dst_factor": "one-minus-src-alpha"}}
@@ -220,10 +220,11 @@ for line in (frames / "scenes.txt").read_text().splitlines():
         depth_stencil_attachment={"view": depth_view, "depth_load_op": "clear", "depth_store_op": "discard",
                                   "depth_clear_value": 1.0})
     p.set_bind_group(0, scene_group)
-    p.set_pipeline(sky)
-    p.draw(3)
     p.set_pipeline(blocks)
     draw_blocks(p, scene_moving, scene_traffic)
+    # The sky after the city, as CityRenderer draws it: at the far plane, only where the city isn't.
+    p.set_pipeline(sky)
+    p.draw(3)
     if scene_moving and fold < 0.999:
         p.set_pipeline(clouds)
         p.draw_indexed(36, scene_moving)

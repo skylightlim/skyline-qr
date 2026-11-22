@@ -250,12 +250,21 @@ object FlatColours {
       else floatArrayOf(col + 0.5f, row + 0.5f, 0f)
     }
     val pull = FloatArray(anchors.size)
+    // Each module's seeded shift toward each district, worked out once: the balancing below asks
+    // for every module's home many times over.
+    val shifts = FloatArray(darks.size * anchors.size) { i ->
+      val m = i / anchors.size
+      if (spots[m][2] > 0f) 0f else unit(seed + 41 + i % anchors.size, darks[m]) - 0.5f
+    }
     fun home(m: Int): Int {
-      val (x, z, finder) = spots[m]
+      val spot = spots[m]
+      val x = spot[0]
+      val z = spot[1]
       var home = 0
       var nearest = Float.MAX_VALUE
-      for ((k, a) in anchors.withIndex()) {
-        val shift = if (finder > 0f) 0f else unit(seed + 41 + k, darks[m]) - 0.5f
+      for (k in anchors.indices) {
+        val a = anchors[k]
+        val shift = shifts[m * anchors.size + k]
         val apart = ((x - a[0]) * (x - a[0]) + (z - a[1]) * (z - a[1])) * a[3]
         val d = if (balanced) apart + rough * shift - pull[k] else apart * (1f + RAGGED * shift)
         if (d < nearest) {

@@ -157,14 +157,17 @@ internal object Traffic {
         out += Mover(Mover.BUS, route, 1.2f, (hash(1, 2, seed + 41) + k / BUS_PAINTS.size.toFloat()) % 1f, paint, stops = stops, signals = signals)
       }
     }
+    // Cars on the same loop share its route and stop lines: walking a loop for its lights is
+    // most of the plan's time, and the answer is the same for every car on it.
+    val walked = HashMap<List<Pair<Int, Int>>, Pair<Route, FloatArray>>()
     for ((i, entry) in cars.take(12).withIndex()) {
       val (loop, k) = entry
       val count = max(1, loop.size / 18)
       val phase = (k + hash(i, loop.size, seed + 77) * 0.6f) / count
-      val route = route(loop, n)
+      val (route, stops) = walked.getOrPut(loop) { route(loop, n).let { it to stopLines(it, signals, n) } }
       out += Mover(
         Mover.CAR, route, 1.5f + 1.0f * hash(i, 3, seed + 733), phase % 1f, hash(i, 5, seed + 811),
-        stops = stopLines(route, signals, n), signals = signals,
+        stops = stops, signals = signals,
       )
     }
 
@@ -310,9 +313,11 @@ internal object Traffic {
     for (j in 0 until signals.cells.size / 2) junction[signals.cells[j * 2 + 1] * (n + 2) + signals.cells[j * 2]] = j
     for (k in 0 until signals.areas.size / 3) junction[signals.areas[k * 3 + 1] * (n + 2) + signals.areas[k * 3]] = signals.areas[k * 3 + 2]
     val half = n / 2f
-    val point = FloatArray(4)
+    val point = FloatArray(3)
+    // The walk takes thousands of small steps, so each starts its search where the last ended.
+    var segment = 0
     fun cellAt(s: Float): Int {
-      route.at(s, point)
+      segment = route.positionAt(s, point, segment)
       return kotlin.math.floor(point[2] + half).toInt() * (n + 2) + kotlin.math.floor(point[0] + half).toInt()
     }
     val out = ArrayList<Float>()
@@ -522,9 +527,32 @@ internal object Traffic {
     fun calls(path: List<Pair<Int, Int>>): List<Int> {
       fun straight(k: Int) = k in 1 until path.size - 1 &&
         (path[k - 1].first == path[k + 1].first || path[k - 1].second == path[k + 1].second)
+      // Searched with plain loops over the straight modules, found once for every sight: the
+      // line's search scores every step it tries, so this runs often.
+      val size = path.size
+      val xs = FloatArray(size)
+      val zs = FloatArray(size)
+      val straights = IntArray(size)
+      var straightCount = 0
+      for (k in 0 until size) {
+        if (!straight(k)) continue
+        straights[straightCount++] = k
+        xs[k] = path[k].first + 0.5f
+        zs[k] = path[k].second + 0.5f
+      }
       return sights.mapNotNull { sight ->
-        fun far(k: Int) = hypot(path[k].first + 0.5f - sight[0], path[k].second + 0.5f - sight[1])
-        path.indices.filter(::straight).minByOrNull(::far)?.takeIf { far(it) <= sight[2] }
+        var nearest = -1
+        var nearestFar = 0f
+        for (j in 0 until straightCount) {
+          val k = straights[j]
+          val far = hypot(xs[k] - sight[0], zs[k] - sight[1])
+          // The first of equals, as minByOrNull keeps.
+          if (nearest < 0 || far < nearestFar) {
+            nearest = k
+            nearestFar = far
+          }
+        }
+        nearest.takeIf { it >= 0 && nearestFar <= sight[2] }
       }
     }
     fun score(path: List<Pair<Int, Int>>): Float {

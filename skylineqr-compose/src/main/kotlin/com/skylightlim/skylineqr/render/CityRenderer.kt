@@ -224,6 +224,8 @@ internal class CityRenderer(
   private var queue: GPUQueue? = null
   private var resources: Resources? = null
   private var pipelinesJob: Deferred<Pipelines>? = null
+  /** The surface format [pipelinesJob] builds for. */
+  private var pipelinesFormat = TextureFormat.Undefined
   private var pipelines: Pipelines? = null
   private var wanted: Surface? = null
   private var surface: GPUSurface? = null
@@ -332,6 +334,27 @@ internal class CityRenderer(
       // hold (90 Hz and 60 Hz draw every frame).
       if (nanos - lastFrame in 1 until 10_000_000L) wake() else if (drawFrame(nanos)) wake()
     }
+
+  init {
+    // Last, after every field above: the render thread runs this as soon as it can.
+    post { warmUp() }
+  }
+
+  /**
+   * Starts the device and builds the pipelines for the usual surface format as soon as the
+   * renderer exists (2026-11-21), while the screen is laid out, the surface made and the city
+   * planned, instead of only once the surface arrives: compiling the shaders is most of the wait
+   * before the first frame. [connect] builds them again only for a surface that wants another
+   * format.
+   */
+  private fun warmUp() {
+    if (failed) return
+    val starting = gpuJob ?: scope.async { startGpu() }.also { gpuJob = it }
+    if (pipelinesJob != null) return
+    val usual = PREFERRED_FORMATS[0]
+    pipelinesFormat = usual
+    pipelinesJob = scope.async { buildPipelines(starting.await().device, resources!!, usual) }
+  }
 
   fun setFlat(flat: Boolean) {
     post {
@@ -551,9 +574,15 @@ internal class CityRenderer(
         if (CompositeAlphaMode.Opaque in capabilities.alphaModes) CompositeAlphaMode.Opaque
         else CompositeAlphaMode.Auto
       configure()
-      // The surface format is only known now, and the pipelines are built for it, once.
+      // The pipelines are built for the surface's format, once: warmUp started them for the usual
+      // one, so only a surface that wants another builds them again.
       val resources = resources!!
-      val job = pipelinesJob ?: scope.async { buildPipelines(gpu.device, resources, format) }.also { pipelinesJob = it }
+      val job =
+        pipelinesJob?.takeIf { pipelinesFormat == format }
+          ?: scope.async { buildPipelines(gpu.device, resources, format) }.also {
+            pipelinesJob = it
+            pipelinesFormat = format
+          }
       pipelines = job.await()
       if (wanted === androidSurface) wake()
     } catch (e: CancellationException) {
@@ -1008,16 +1037,19 @@ internal class CityRenderer(
         )
         .use { pass ->
           pass.setBindGroup(0, resources.sceneGroup)
-          pass.setPipeline(pipelines.sky)
-          pass.draw(3)
           if (city != null && instances != null) {
             pass.setPipeline(pipelines.blocks)
             drawBlocks(pass, resources, instances, city.count, moving)
-            if (moving > 0 && fold < 0.999f) {
-              // The clouds, soft and blended over all that: their puffs are among the traffic's boxes.
-              pass.setPipeline(pipelines.clouds)
-              pass.drawIndexed(FrameData.CUBE_INDICES.size, moving)
-            }
+          }
+          // The sky after the city, behind it by depth: the same picture, but the GPU skips the
+          // sky's work wherever a building or the plate already stands.
+          pass.setPipeline(pipelines.sky)
+          pass.draw(3)
+          if (city != null && instances != null && moving > 0 && fold < 0.999f) {
+            // The clouds, soft and blended over all that: their puffs are among the traffic's
+            // boxes, whose buffers drawBlocks left bound.
+            pass.setPipeline(pipelines.clouds)
+            pass.drawIndexed(FrameData.CUBE_INDICES.size, moving)
           }
           if (drops > 0) {
             pass.setPipeline(pipelines.rain)
@@ -1789,7 +1821,8 @@ internal class CityRenderer(
                 ),
             )
           )
-        val sky = pipeline("sky", GPUVertexState(module, "skyVertex"), "skyFragment", depth(write = false, compare = CompareFunction.Always))
+        // The sky lies at the far plane and is drawn after the city, so it shades only what the city leaves.
+        val sky = pipeline("sky", GPUVertexState(module, "skyVertex"), "skyFragment", depth(write = false, compare = CompareFunction.LessEqual))
         val clouds = pipeline("clouds", blockVertexState(module, "cloudVertex"), "cloudFragment", depth(write = false, compare = CompareFunction.LessEqual), alpha)
         val rain = pipeline("rain", GPUVertexState(module, "rainVertex"), "rainFragment", depth(write = false, compare = CompareFunction.LessEqual), alpha)
         val additive = GPUBlendState(
