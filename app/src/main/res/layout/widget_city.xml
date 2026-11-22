@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The home screen widget: the city alone, cropped to fill, with rounded corners. Until the app
+     has drawn a city, the Kuala Lumpur poster stands in. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_background"
+    android:clipToOutline="true"
+    android:contentDescription="@string/widget_description"
+    tools:targetApi="31">
+
+    <ImageView
+        android:id="@+id/widget_poster"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:importantForAccessibility="no"
+        android:scaleType="centerCrop"
+        android:src="@drawable/kl_poster" />
+
+    <ImageView
+        android:id="@+id/widget_city"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:importantForAccessibility="no"
+        android:scaleType="centerCrop"
+        android:visibility="gone" />
+</FrameLayout>

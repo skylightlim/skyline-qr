@@ -53,8 +53,12 @@ import com.skylightlim.skylineqr.core.PaymentCode
 import com.skylightlim.skylineqr.nfc.card.Card
 import com.skylightlim.skylineqr.nfc.card.CardContent
 import com.skylightlim.skylineqr.theme.SkylineQRTheme
+import com.skylightlim.skylineqr.widget.CityWidget
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 private const val DEFAULT_URL = "https://www.instagram.com/chenyuulim/"
 
@@ -98,6 +102,20 @@ fun SkylineScreen(
     if (tours == 0) return@LaunchedEffect
     snapshotFlow { qr.identity }.first { it != null }
     qr.startTour()
+  }
+
+  // The home screen widget (2026-11-22) shows the city as the app last showed it: after each change
+  // of link, hour, weather or clouds, once the city has stood still in 3D for a few seconds (the
+  // sky eases over 3 s), a picture of it, exactly as it looks, is kept for the widget. Not of the
+  // flat code, the tour, the timelapse or the 2D fallback.
+  LaunchedEffect(qr, url, time, weather, settings.clouds) {
+    fun settled() = !qr.loading && !qr.fallback && qr.error == null && !qr.flat && !qr.touring && !qr.timelapsing
+    do {
+      snapshotFlow { settled() }.first { it }
+      delay(WIDGET_SETTLE_MILLIS)
+    } while (!settled())
+    val city = withTimeoutOrNull(WIDGET_SNAPSHOT_TIMEOUT_MILLIS) { qr.snapshot(flat = false) } ?: return@LaunchedEffect
+    withContext(Dispatchers.IO) { CityWidget.save(context.applicationContext, city) }
   }
 
   // The link the city shows is the one the phone hands over by tap. A payment code's city
@@ -240,6 +258,10 @@ fun SkylineScreen(
 
 private const val POSTER_MIN_MILLIS = 1200L
 private const val POSTER_FADE_MILLIS = 600
+
+/** How long the city stands still before the widget's picture is taken. */
+private const val WIDGET_SETTLE_MILLIS = 4000L
+private const val WIDGET_SNAPSHOT_TIMEOUT_MILLIS = 5000L
 
 /** Now follows the clock through dawn and dusk; the fixed choices are just day and night. */
 private val TIMES = listOf(TimeOfDay.AUTO, TimeOfDay.DAY, TimeOfDay.NIGHT)

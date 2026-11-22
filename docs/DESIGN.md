@@ -485,6 +485,16 @@ with no server involved.
   shortcut (long-press the app's icon; `res/xml/shortcuts.xml`, action
   `com.skylightlim.skylineqr.TOUR`, which waits for the first city). The panel sinks away while it
   flies and comes back as it lands.
+- The home screen widget (2026-11-22, at the user's request: "make a app a widget that user can put
+  on home screen, only show the city, no need other settings"; `widget/CityWidget.kt`): a picture
+  of the city the app last showed, exactly as it looked (link, hour, weather, clouds and camera),
+  cropped to fill the widget with the launcher's corners, and nothing else: no controls, no
+  settings, no configure step. A tap opens the app. A home screen can't run the WebGPU renderer,
+  so the app takes the picture (`snapshot(flat = false)`) after each change of link, hour, weather
+  or clouds, once the city has stood still in 3D for 4 s, never of the flat code, the tour, the
+  timelapse or the 2D fallback, and keeps it as `files/widget-city.png` (at most 1080 px a side).
+  Until the app has drawn a city the widget shows the Kuala Lumpur poster. The picture keeps the
+  hour it was taken at: on Now it moves on only when the app is next opened.
 - The timelapse (2026-11-20, at the user's request: "run the city from day to night in 15
   seconds"), from the settings card's button beside the tour (`SkylineQrState.startTimelapse`,
   `render/Timelapse.kt`). The clock runs from Day's 12:30 to Night's 23:00 in fifteen seconds on

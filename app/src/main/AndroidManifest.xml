@@ -31,6 +31,18 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
+        <!-- The home screen widget: the city alone (widget/CityWidget.kt). -->
+        <receiver
+            android:name=".widget.CityWidget"
+            android:exported="false"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/city_widget_info" />
+        </receiver>
     </application>
 
 </manifest>
