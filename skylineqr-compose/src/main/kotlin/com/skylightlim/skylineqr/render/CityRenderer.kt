@@ -522,12 +522,14 @@ internal class CityRenderer(
 
   /**
    * The next frame, handed to [onBitmap] on the main thread: in the flat, scannable pose, or with
-   * [flat] false exactly as the city looks right now.
+   * [flat] false exactly as the city looks right now. Requests made before that frame share it
+   * (the app's postcard and its widget's picture can ask at once), flat if any asked for flat.
    */
   fun requestSnapshot(flat: Boolean = true, onBitmap: (Bitmap) -> Unit) {
     post {
-      snapshotRequest = onBitmap
-      snapshotFlat = flat
+      val waiting = snapshotRequest
+      snapshotRequest = if (waiting == null) onBitmap else { bitmap -> waiting(bitmap); onBitmap(bitmap) }
+      snapshotFlat = flat || (waiting != null && snapshotFlat)
       wake()
     }
   }
