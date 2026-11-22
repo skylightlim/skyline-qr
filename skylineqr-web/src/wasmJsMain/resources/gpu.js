@@ -27,6 +27,14 @@ const SkylineGpu = (() => {
   /** Set once the GPU has finished a whole frame: until then the page can't trust WebGPU. */
   let proven = false;
   let proving = false;
+  /** Waiting for the next frame's pixels, for the postcard: [resolve, reject]. */
+  let snapshotWanted = null;
+  /** Drawing the postcard's photo: the city on the clear colour, with no sky behind it. */
+  let photo = false;
+
+  function photoMode(on) {
+    photo = on;
+  }
 
   function failNow(message) {
     if (failed) return;
@@ -80,7 +88,8 @@ const SkylineGpu = (() => {
     const canvas = context.canvas;
     canvas.width = width;
     canvas.height = height;
-    context.configure({ device, format, alphaMode: 'opaque', usage: GPUTextureUsage.RENDER_ATTACHMENT });
+    // COPY_SRC lets the postcard read a frame back (snapshot).
+    context.configure({ device, format, alphaMode: 'opaque', usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC });
     if (targets) targets.destroy();
     targets = makeTargets(width, height);
   }
@@ -351,8 +360,10 @@ const SkylineGpu = (() => {
       depthStencilAttachment: { view: targets.depthView, depthLoadOp: 'clear', depthStoreOp: 'discard', depthClearValue: 1 },
     });
     pass.setBindGroup(0, res.sceneGroup);
-    pass.setPipeline(pipes.sky);
-    pass.draw(3);
+    if (!photo) {
+      pass.setPipeline(pipes.sky);
+      pass.draw(3);
+    }
     if (city) {
       pass.setPipeline(pipes.blocks);
       drawBlocks(pass, count, moving, indexCount);
@@ -384,8 +395,11 @@ const SkylineGpu = (() => {
       for (let i = 1; i < BLOOM_LEVELS; i++) screenPass(encoder, targets.bloomViews[i], pipes.down, targets.downGroups[i], false);
       for (let i = BLOOM_LEVELS - 2; i >= 0; i--) screenPass(encoder, targets.bloomViews[i], pipes.up, targets.upGroups[i], true);
     }
-    screenPass(encoder, context.getCurrentTexture().createView(), pipes.composite, targets.compositeGroup, false);
+    const screen = context.getCurrentTexture();
+    screenPass(encoder, screen.createView(), pipes.composite, targets.compositeGroup, false);
+    const readback = snapshotWanted ? copyOut(encoder, screen) : null;
     device.queue.submit([encoder.finish()]);
+    if (readback) finishSnapshot(readback, grab(screen.width, screen.height));
     if (!proven && !proving) {
       // The first frame proves WebGPU works here; one that never finishes means it doesn't.
       proving = true;
@@ -397,6 +411,83 @@ const SkylineGpu = (() => {
           globalThis.SkylinePage?.loaded();
         })
         .catch((e) => failNow(e.message));
+    }
+  }
+
+  /**
+   * The next frame as it shows on screen, for the postcard: resolves to a 2D canvas of it. It is
+   * copied from the WebGPU canvas in the same task as the frame is drawn, while the canvas still
+   * holds it; where that comes out empty, the frame is read back with copyTextureToBuffer instead.
+   * (The read back alone failed in Chrome, 2026-11-22: its mapAsync could reject with "A valid
+   * external Instance reference no longer exists".)
+   */
+  function snapshot() {
+    if (!device || failed || !proven) return Promise.reject(new Error('no city to photograph'));
+    if (snapshotWanted) snapshotWanted[1](new Error('superseded'));
+    const photo = new Promise((resolve, reject) => { snapshotWanted = [resolve, reject]; });
+    const mine = snapshotWanted;
+    return within(5000, photo, 'the postcard photo').finally(() => { if (snapshotWanted === mine) snapshotWanted = null; });
+  }
+
+  function copyOut(encoder, texture) {
+    const w = texture.width;
+    const h = texture.height;
+    const bytesPerRow = Math.ceil((w * 4) / 256) * 256;
+    const buffer = device.createBuffer({ size: bytesPerRow * h, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ, label: 'snapshot' });
+    encoder.copyTextureToBuffer({ texture }, { buffer, bytesPerRow }, [w, h]);
+    const wanted = snapshotWanted;
+    snapshotWanted = null;
+    return { buffer, w, h, bytesPerRow, bgra: texture.format.startsWith('bgra'), wanted };
+  }
+
+  /** The canvas as it stands now, on a 2D canvas; null if it comes out empty. */
+  function grab(w, h) {
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(context.canvas, 0, 0);
+      // An opaque canvas always has alpha; an empty copy has none.
+      const probe = ctx.getImageData(w >> 1, h >> 1, 1, 1).data;
+      return probe[3] === 0 ? null : canvas;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  async function finishSnapshot({ buffer, w, h, bytesPerRow, bgra, wanted }, grabbed) {
+    const [resolve, reject] = wanted;
+    if (grabbed) {
+      buffer.destroy();
+      resolve(grabbed);
+      return;
+    }
+    try {
+      await buffer.mapAsync(GPUMapMode.READ);
+      const src = new Uint8Array(buffer.getMappedRange());
+      const image = new ImageData(w, h);
+      const out = image.data;
+      for (let y = 0; y < h; y++) {
+        let s = y * bytesPerRow;
+        let d = y * w * 4;
+        for (let x = 0; x < w; x++, s += 4, d += 4) {
+          out[d] = bgra ? src[s + 2] : src[s];
+          out[d + 1] = src[s + 1];
+          out[d + 2] = bgra ? src[s] : src[s + 2];
+          out[d + 3] = 255;
+        }
+      }
+      buffer.unmap();
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      canvas.getContext('2d').putImageData(image, 0, 0);
+      resolve(canvas);
+    } catch (e) {
+      reject(e);
+    } finally {
+      buffer.destroy();
     }
   }
 
@@ -436,6 +527,6 @@ const SkylineGpu = (() => {
     return widths.join(',');
   }
 
-  return { start, resize, uploadCity, writeFrame, writeTraffic, draw, drawAtlas };
+  return { start, resize, photoMode, uploadCity, writeFrame, writeTraffic, draw, drawAtlas, snapshot };
 })();
 globalThis.SkylineGpu = SkylineGpu;

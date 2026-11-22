@@ -88,6 +88,7 @@ import androidx.webgpu.helper.createWebGpu
 import com.skylightlim.skylineqr.city.Atmosphere
 import com.skylightlim.skylineqr.city.Atmospheres
 import com.skylightlim.skylineqr.city.City
+import com.skylightlim.skylineqr.city.CityColours
 import com.skylightlim.skylineqr.city.CityPlanner
 import com.skylightlim.skylineqr.city.Festivals
 import com.skylightlim.skylineqr.city.Vehicles
@@ -173,6 +174,18 @@ internal class CityRenderer(
    */
   @Volatile
   var clouds = true
+    set(value) {
+      if (field == value) return
+      field = value
+      post { wake() }
+    }
+
+  /**
+   * Which inks the towers and the code take (2026-11-22, at the user's request; a setting in the
+   * app): the colourful ones or grey blue. They change at once, as a new frame's uniform.
+   */
+  @Volatile
+  var colours = CityColours.COLOURFUL
     set(value) {
       if (field == value) return
       field = value
@@ -486,12 +499,14 @@ internal class CityRenderer(
 
   /**
    * The next frame, handed to [onBitmap] on the main thread: in the flat, scannable pose, or with
-   * [flat] false exactly as the city looks right now.
+   * [flat] false exactly as the city looks right now. Requests made before that frame share it
+   * (the app's postcard and its widget's picture can ask at once), flat if any asked for flat.
    */
   fun requestSnapshot(flat: Boolean = true, onBitmap: (Bitmap) -> Unit) {
     post {
-      snapshotRequest = onBitmap
-      snapshotFlat = flat
+      val waiting = snapshotRequest
+      snapshotRequest = if (waiting == null) onBitmap else { bitmap -> waiting(bitmap); onBitmap(bitmap) }
+      snapshotFlat = flat || (waiting != null && snapshotFlat)
       wake()
     }
   }
@@ -750,7 +765,8 @@ internal class CityRenderer(
       timelapse()
 
       val shot = snapshotRequest
-      if (shot != null && snapshotFlat) morph.finish(flat = true)
+      // A snapshot shows the finished pose it asked for, never a frame mid-morph.
+      if (shot != null) morph.finish(flat = snapshotFlat)
       // The camera swings over the whole morph; the city folds block by block, landing before it.
       val swing = morph.swing(nanos)
       val fold = morph.fold(nanos)
@@ -1218,6 +1234,7 @@ internal class CityRenderer(
       bolt = floatArrayOf(boltX, boltZ, boltTop, if (boltAimed && flash > 0f) 1f else 0f),
       screen = screen.also { board.state(seconds, calm, it) },
       stars = FrameData.stars(city, air, height),
+      colours = colours,
     )
     val f = frame
     frameBytes.asFloatBuffer().put(f)

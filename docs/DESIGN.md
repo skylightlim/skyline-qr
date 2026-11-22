@@ -100,6 +100,16 @@ with no server involved.
   module under both formulas. Kuala Lumpur's arrangement was chosen by scanning: the version 3
   test code misses at 7.7 and 8.9 px a module whatever the inks, and a poor arrangement misses at
   8.6 too, which the sweep samples; check a new one at every tenth of a pixel from 7.5 to 9.5.
+- Grey blue (2026-11-22, at the user's request: "make the city in grey, blueish, not this
+  colourful option"): a second set of fourteen inks, `CityColours.GREY_BLUE`, beside the
+  colourful ones (`COLOURFUL`, still the default). Slate, smoke, dusk, denim, steel, storm and mist,
+  two shades each, in the same places as the Pantone hues, so every module keeps its ink index and
+  each of Kuala Lumpur's districts still reads as its own shade. They sit on the same two
+  brightnesses and are solved the same way, so the code scans the same (`FlatColoursTest` scans
+  both sets; the device test renders both). Presentation only, like the hour: the city, its
+  districts, its identity and generator version 1's fingerprints do not change. The app's settings
+  card and the website's More sheet offer it as "City colours: Colourful / Grey blue"; the app
+  keeps the choice. The paper still follows the hour.
 
 ## The city
 
@@ -487,11 +497,11 @@ with no server involved.
   flies and comes back as it lands.
 - The home screen widget (2026-11-22, at the user's request: "make a app a widget that user can put
   on home screen, only show the city, no need other settings"; `widget/CityWidget.kt`): a picture
-  of the city the app last showed, exactly as it looked (link, hour, weather, clouds and camera),
-  cropped to fill the widget with the launcher's corners, and nothing else: no controls, no
+  of the city the app last showed, exactly as it looked (link, hour, weather, colours, clouds and
+  camera), cropped to fill the widget with the launcher's corners, and nothing else: no controls, no
   settings, no configure step. A tap opens the app. A home screen can't run the WebGPU renderer,
-  so the app takes the picture (`snapshot(flat = false)`) after each change of link, hour, weather
-  or clouds, once the city has stood still in 3D for 4 s, never of the flat code, the tour, the
+  so the app takes the picture (`snapshot(flat = false)`) after each change of link, hour, weather,
+  colours or clouds, once the city has stood still in 3D for 4 s, never of the flat code, the tour, the
   timelapse or the 2D fallback, and keeps it as `files/widget-city.png` (at most 1080 px a side).
   Until the app has drawn a city the widget shows the Kuala Lumpur poster. The picture keeps the
   hour it was taken at: on Now it moves on only when the app is next opened.
@@ -548,6 +558,18 @@ with no server involved.
   the App Links filter and `site/`). The page published on `skylightlim.github.io` on 2026-11-06
   was left as it is; the app no longer opens its links. Text shared into the app still makes a
   new card.
+- The postcard (2026-11-22, at the user's request: "share the current qr code as a postcard"):
+  "Share as a postcard" in the settings card, under the tour, closes the card and opens the share
+  sheet with a 1080 by 1350 PNG (`ui/Postcard.kt`). On the flat code's paper for the hour: the
+  city as the camera sees it (`snapshot(flat = false)`, its middle cut to fit, round-cornered),
+  and beneath it the card's title, "Kuala Lumpur · the hour (and weather) · the date" and "Scan the
+  code to open it", with the code in the corner at the paper's colours. The code is drawn by
+  `codeBitmap` at whole pixels a module (about 340 px across with its quiet zone, never under
+  3 px a module) and placed unscaled, its modules level with the photo's edges, and nothing covers
+  its quiet zone (`PostcardLayoutTest`), so it scans as the flat code does. If the code was showing,
+  the snapshot stands the city up at once. Without WebGPU the frame shows the code alone, large.
+  The image is written to the cache (earlier ones cleared) and handed over by a FileProvider, so
+  only the chosen app can read it. The website has it too (2026-11-22; see Website).
 - The default link is the user's Instagram, `https://www.instagram.com/chenyuulim/` (2026-11-06).
 
 ## Website
@@ -569,10 +591,31 @@ Added 2026-11-21, at the user's request ("make this app into a website").
   and gpu.js builds the same passes with the browser's WebGPU; a change to what CityRenderer draws
   or when belongs in both.
 - The page (redesigned 2026-11-21, at the user's request, after the layout of tree.icqr.com in
-  our own look): the city full screen, the wordmark top left and an about button top right; below,
-  one wide link field with a square Tour button, then Now, Day and Night as three equal buttons and
-  a square button for the rest (weather, what a long press does, the clouds, the timelapse, the
-  sign board). Tapping the city folds it into its code. No share links, as in the app.
+  our own look): the city full screen and the wordmark top left; below, one wide link field with a
+  square Tour button, then Now, Day and Night as three equal buttons and a square button for the
+  rest (the postcard, weather with the clouds beside it, city colours, what a long press does, the
+  timelapse, the sign board). Tapping the city folds it into its code. No share links, as in the app.
+- Polish (2026-11-22, at the user's request): no "Open source" badge and no about button; text in
+  Inter (OFL, self-hosted, Latin only), the clean sans tree.icqr.com uses; the settings sheet flat,
+  a solid sheet with a hairline edge and no shadow or blur inside or out; every button sinks under
+  a press and springs back, eases between states and pops as it becomes the chosen one, and the
+  sheet, the controls and the Stop button ease in (none of it with reduced motion). The sign board
+  starts with 马大牛逼 alone.
+- The postcard (2026-11-22, at the user's request, after the app's; revised the same day at the
+  user's request): "Share as a postcard" in the sheet draws a 1080 by 1350 card (page.js; the
+  app's `ui/Postcard.kt` keeps its own layout). The city is photographed for it: for a frame or
+  two the canvas is drawn at the photo's shape (1.5 times its size on the card) from the city's
+  own angle, whatever the person has turned or zoomed, with no lens shift, so the city sits in the
+  middle, and with no sky behind it, on the paper (`WebRenderer.startPhoto`, gpu.js `photoMode`);
+  the photo's own corner colour becomes the card's, so the photo has no edge. Beneath: the link and
+  "Kuala Lumpur · the date", and the code in the corner, its quiet zone on the card's paper. No
+  hour, no "Scan the code" line. Showing the code, the city stands up at once first; without WebGPU
+  the frame holds the code alone, large, on the paper. The photo is copied from the WebGPU canvas
+  in the same task as its frame (`snapshot`), with copyTextureToBuffer as a fallback: Chrome's
+  mapAsync could reject ("A valid external Instance reference no longer exists"), which left the
+  first version's button doing nothing. It opens in a preview with Save (a PNG download) and, where
+  the browser can share files (`navigator.canShare`), Share, which opens the system share sheet
+  and saves instead if the browser refuses.
 - WebGPU is tried only where it can't take the tab down: Firefox-based browsers (Zen among them)
   get the flat code unless opened with `?webgpu=1`, because their WebGPU crashed the page; a
   request that hangs, or a first frame that never finishes, also falls back. Without WebGPU, the flat code on a

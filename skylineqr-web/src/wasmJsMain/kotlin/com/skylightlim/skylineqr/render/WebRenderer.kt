@@ -3,6 +3,7 @@ package com.skylightlim.skylineqr.render
 import com.skylightlim.skylineqr.city.Atmosphere
 import com.skylightlim.skylineqr.city.Atmospheres
 import com.skylightlim.skylineqr.city.City
+import com.skylightlim.skylineqr.city.CityColours
 import com.skylightlim.skylineqr.city.CityPlanner
 import com.skylightlim.skylineqr.city.Festivals
 import com.skylightlim.skylineqr.city.TimeOfDay
@@ -68,6 +69,14 @@ internal class WebRenderer(
 
   /** Whether the weather's clouds show; see CityRenderer.clouds. */
   var clouds = true
+    set(value) {
+      if (field == value) return
+      field = value
+      wake()
+    }
+
+  /** Which inks the towers and the code take; see CityRenderer.colours. */
+  var colours = CityColours.COLOURFUL
     set(value) {
       if (field == value) return
       field = value
@@ -199,8 +208,33 @@ internal class WebRenderer(
     }
   }
 
-  fun setFlat(flat: Boolean) {
-    if (calm) morph.finish(flat) else morph.aim(flat, Browser.nanos())
+  /**
+   * The postcard's photo (2026-11-22): while set, the next frames are drawn [w] by [h] from the
+   * city's own angle (no orbit, zoom or tour), the city in the middle of the frame and on the
+   * paper rather than the sky, for gpu.js to read back. [endPhoto] puts the screen back.
+   */
+  fun startPhoto(w: Int, h: Int) {
+    if (!ready || failed) return
+    photo = intArrayOf(w, h)
+    morph.finish(false)
+    Gpu.photoMode(true)
+    Gpu.resize(w, h)
+    wake()
+  }
+
+  fun endPhoto() {
+    if (photo == null) return
+    photo = null
+    Gpu.photoMode(false)
+    if (ready && !failed) Gpu.resize(width, height)
+    wake()
+  }
+
+  private var photo: IntArray? = null
+
+  /** [instantly] skips the morph, as the postcard does when it stands the city up for its photo. */
+  fun setFlat(flat: Boolean, instantly: Boolean = false) {
+    if (calm || instantly) morph.finish(flat) else morph.aim(flat, Browser.nanos())
     // A meteor, a bolt or fireworks only ever happen over the city, never the code.
     if (flat) {
       meteorAt = -1f
@@ -498,7 +532,10 @@ internal class WebRenderer(
       // The ground shakes for half a second after the impact.
       val shake = if (impact in 0f..0.6f) exp(-impact * 6f) else 0f
       val shaken = View(shown.yaw + 0.02f * shake * sin(impact * 63f), shown.elevation + 0.015f * shake * cos(impact * 47f), shown.zoom)
-      val pose = tourPose(current, Camera.pose(current, width.toFloat() / height, swing, seconds, shaken))
+      val photo = this.photo
+      val pose =
+        if (photo != null) Camera.pose(current, photo[0].toFloat() / photo[1], swing, seconds, View(), lift = false)
+        else tourPose(current, Camera.pose(current, width.toFloat() / height, swing, seconds, shaken))
       lastPose = pose
       festivities(current, fold)
       writeFrame(pose, Camera.light(current, air.sunDir), fold, current, air, impact)
@@ -514,14 +551,14 @@ internal class WebRenderer(
         drops = drops,
         gusts = gusts,
         fold = fold,
-        clear = floatArrayOf(sky[0] * 0.85f, sky[1] * 0.85f, sky[2] * 0.85f),
+        clear = if (photo != null) air.paper else floatArrayOf(sky[0] * 0.85f, sky[1] * 0.85f, sky[2] * 0.85f),
         post = floatArrayOf(BLOOM_THRESHOLD, BLOOM_KNEE, strength, fold),
         gustVertices = Wgsl.GUST_VERTICES,
         gustBase = Wgsl.GUST_BASE,
         indices = FrameData.CUBE_INDICES.size,
       )
       // The flat code is still: once the morph settles, draw again only when something changes.
-      return !(morph.heading == 1f && morph.settled(nanos))
+      return photo != null || !(morph.heading == 1f && morph.settled(nanos))
     } catch (e: Throwable) {
       failNow(e.message ?: e.toString())
       return false
@@ -710,6 +747,7 @@ internal class WebRenderer(
       bolt = floatArrayOf(boltX, boltZ, boltTop, if (boltAimed && flash > 0f) 1f else 0f),
       screen = screen.also { board.state(seconds, calm, it) },
       stars = FrameData.stars(city, air, height),
+      colours = colours,
     )
     Gpu.writeFrame(frame)
   }

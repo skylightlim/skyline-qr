@@ -10,6 +10,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import com.skylightlim.skylineqr.city.Atmosphere
 import com.skylightlim.skylineqr.city.City
+import com.skylightlim.skylineqr.city.CityColours
 import com.skylightlim.skylineqr.city.FlatColours
 
 /**
@@ -23,10 +24,10 @@ internal object FlatCode {
 
   fun paper(air: Atmosphere): Int = argb(air.paper)
 
-  fun bitmap(city: City, air: Atmosphere, modulePx: Int = 16): Bitmap {
+  fun bitmap(city: City, air: Atmosphere, modulePx: Int = 16, inks: CityColours = CityColours.COLOURFUL): Bitmap {
     val side = (city.modules + 2 * QUIET) * modulePx
     val n = city.modules
-    val colours = IntArray(n * n) { argb(FlatColours.module(city, it % n, it / n, air)) }
+    val colours = IntArray(n * n) { argb(FlatColours.module(city, it % n, it / n, air, inks)) }
     val paper = paper(air)
     val pixels = IntArray(side * side) { i ->
       val col = (i % side) / modulePx - QUIET
@@ -42,9 +43,9 @@ internal object FlatCode {
 }
 
 @Composable
-internal fun FlatCodeView(city: City, air: Atmosphere, modifier: Modifier = Modifier) {
+internal fun FlatCodeView(city: City, air: Atmosphere, modifier: Modifier = Modifier, inks: CityColours = CityColours.COLOURFUL) {
   val n = city.modules
-  val colours = remember(city, air) { List(n * n) { Color(FlatCode.argb(FlatColours.module(city, it % n, it / n, air))) } }
+  val colours = remember(city, air, inks) { List(n * n) { Color(FlatCode.argb(FlatColours.module(city, it % n, it / n, air, inks))) } }
   Canvas(modifier) {
     val cell = size.minDimension / (n + 2 * FlatCode.QUIET)
     val origin = Offset((size.width - cell * (n + 2 * FlatCode.QUIET)) / 2f, (size.height - cell * (n + 2 * FlatCode.QUIET)) / 2f)

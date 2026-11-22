@@ -84,6 +84,9 @@ internal object SkylineIcons {
       "m16 6-4 4-4-4", "M16 18a4 4 0 0 0-8 0",
     )
 
+  /** Lucide's share: the postcard, out through the share sheet. */
+  val Share = icon("Share", "M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8", "m16 6-4-4-4 4", "M12 2v13")
+
   /** Lucide's monitor: the sign board. */
   val Board = icon("Board", rect(2f, 3f, 20f, 14f, 2f), "M8 21h8", "M12 17v4")
 
