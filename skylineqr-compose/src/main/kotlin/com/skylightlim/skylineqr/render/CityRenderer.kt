@@ -750,7 +750,8 @@ internal class CityRenderer(
       timelapse()
 
       val shot = snapshotRequest
-      if (shot != null && snapshotFlat) morph.finish(flat = true)
+      // A snapshot shows the finished pose it asked for, never a frame mid-morph.
+      if (shot != null) morph.finish(flat = snapshotFlat)
       // The camera swings over the whole morph; the city folds block by block, landing before it.
       val swing = morph.swing(nanos)
       val fold = morph.fold(nanos)
