@@ -452,38 +452,24 @@ private class Page {
   }
 
   /**
-   * The postcard (2026-11-22, as the app's): the city as the camera sees it, with the link, the
-   * place, the hour and the date beneath and the code in the corner. Showing the code, the city
-   * stands up at once for its photo; without WebGPU the postcard shows the code alone.
+   * The postcard (2026-11-22): the city from its own angle, in the middle of the frame on the
+   * card's paper, with the link and "Kuala Lumpur · the date" beneath and the code in the corner
+   * (revised the same day, at the user's request: no hour, no "Scan the code" line, no sky behind
+   * the city). Showing the code, the city stands up at once for its photo; without WebGPU the
+   * postcard shows the code alone.
    */
   private fun postcard() {
     if (touring || timelapsing || !giveCode()) return
     if (!fallback && flat) setFlat(false, instantly = true)
-    Dom.postcard(shownLink(link), "Kuala Lumpur · ${momentLabel()}", css(air().ink), QUIET, withPhoto = !fallback)
-  }
-
-  /** The hour and weather in a word or two, as the app's postcard says them: Now says what the clock says. */
-  private fun momentLabel(): String {
-    val hour =
-      when (time) {
-        TimeOfDay.DAWN -> "Dawn"
-        TimeOfDay.DAY -> "Day"
-        TimeOfDay.DUSK -> "Dusk"
-        TimeOfDay.NIGHT -> "Night"
-        TimeOfDay.AUTO ->
-          when (Atmospheres.clockMinute().toInt() / 60) {
-            in 5..6 -> "Dawn"
-            in 7..17 -> "Day"
-            in 18..19 -> "Dusk"
-            else -> "Night"
-          }
-      }
-    return when (weather) {
-      Weather.CLEAR -> hour
-      Weather.RAIN -> "$hour, rain"
-      Weather.HAZE -> "$hour, haze"
-      Weather.STORM -> "$hour, storm"
-    }
+    Dom.postcard(
+      shownLink(link),
+      "Kuala Lumpur",
+      css(air().ink),
+      QUIET,
+      withPhoto = !fallback,
+      startPhoto = { w, h -> renderer.startPhoto(w, h) },
+      endPhoto = { renderer.endPhoto() },
+    )
   }
 
   private companion object {

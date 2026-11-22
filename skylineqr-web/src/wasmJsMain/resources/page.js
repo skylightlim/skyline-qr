@@ -138,7 +138,6 @@ const SkylinePage = (() => {
   const GAP = 36;
   const CODE_SIDE = 340;
   const MIN_MODULE_PX = 3;
-  const CORNER = 36;
 
   function postcardLayout(modules, quiet) {
     const side = modules + 2 * quiet;
@@ -167,9 +166,9 @@ const SkylinePage = (() => {
     return `rgb(${c.map(Math.round).join(',')})`;
   }
 
-  function drawCode(ctx, left, top, px, quiet) {
+  function drawCode(ctx, left, top, px, quiet, paper = code.paper) {
     const n = code.n;
-    ctx.fillStyle = code.paper;
+    ctx.fillStyle = paper;
     ctx.fillRect(left, top, (n + 2 * quiet) * px, (n + 2 * quiet) * px);
     for (let row = 0; row < n; row++) {
       for (let col = 0; col < n; col++) {
@@ -212,58 +211,54 @@ const SkylinePage = (() => {
     return lines;
   }
 
+  /**
+   * The postcard: the city in the middle of the photo's frame, on the paper (the photo has no sky,
+   * and its own background colour becomes the card's, so there is no edge), the link and "Kuala
+   * Lumpur · the date" beneath, and the code in the corner. Without a photo, the code alone, large.
+   */
   function drawPostcard(photo, quiet, title, caption, inkCss) {
     const layout = postcardLayout(code.n, quiet);
-    const paper = rgbOf(code.paper);
     const ink = rgbOf(inkCss);
     const card = document.createElement('canvas');
     card.width = CARD_W;
     card.height = CARD_H;
     const ctx = card.getContext('2d');
-    ctx.fillStyle = code.paper;
+    // The photo's own paper, as the composite left it, so the photo has no visible edge.
+    let paper = code.paper;
+    if (photo) {
+      const corner = photo.getContext('2d').getImageData(1, 1, 1, 1).data;
+      paper = `rgb(${corner[0]},${corner[1]},${corner[2]})`;
+    }
+    ctx.fillStyle = paper;
     ctx.fillRect(0, 0, CARD_W, CARD_H);
 
     const f = layout.photo;
-    ctx.save();
-    ctx.beginPath();
-    ctx.roundRect(f.left, f.top, f.width, f.height, CORNER);
-    ctx.clip();
     if (photo) {
-      // The middle of the frame, cut to the photo's shape.
-      const aspect = f.width / f.height;
-      let sw = photo.width;
-      let sh = photo.height;
-      if (sw / sh > aspect) sw = Math.round(sh * aspect);
-      else sh = Math.round(sw / aspect);
+      // The photo is drawn at the frame's shape; scale it whole into the frame.
       ctx.imageSmoothingQuality = 'high';
-      ctx.drawImage(photo, (photo.width - sw) / 2, (photo.height - sh) / 2, sw, sh, f.left, f.top, f.width, f.height);
+      ctx.drawImage(photo, f.left, f.top, f.width, f.height);
     } else {
       // No city here (no WebGPU): the code alone, as big as fits, whole pixels a module.
-      ctx.fillStyle = darken(ink, 0.12, paper);
-      ctx.fillRect(f.left, f.top, f.width, f.height);
       const side = code.n + 2 * quiet;
-      const px = Math.max(1, Math.floor((Math.min(f.width, f.height) * 0.8) / side));
-      drawCode(ctx, f.left + Math.floor((f.width - side * px) / 2), f.top + Math.floor((f.height - side * px) / 2), px, quiet);
+      const px = Math.max(1, Math.floor((Math.min(f.width, f.height) * 0.86) / side));
+      drawCode(ctx, f.left + Math.floor((f.width - side * px) / 2), f.top + Math.floor((f.height - side * px) / 2), px, quiet, paper);
     }
-    ctx.restore();
 
-    drawCode(ctx, layout.code.left, layout.code.top, layout.modulePx, quiet);
+    // Its quiet zone on the card's own paper, so the code sits on the card as the city does.
+    drawCode(ctx, layout.code.left, layout.code.top, layout.modulePx, quiet, paper);
 
+    // The link, then the place and the day, level with the foot of the code.
     const w = layout.words;
     const sans = "'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', 'Noto Sans CJK SC', sans-serif";
-    ctx.textBaseline = 'top';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = darken(ink, 0.55);
+    ctx.font = `500 34px ${sans}`;
+    const captionBase = w.bottom - 4;
+    ctx.fillText(fit(ctx, caption, w.width), w.left, captionBase);
     ctx.fillStyle = darken(ink, 0.28);
     ctx.font = `700 60px ${sans}`;
     const lines = wrap(ctx, title, w.width, 2);
-    lines.forEach((line, i) => ctx.fillText(line, w.left, w.top - 6 + i * 70));
-    ctx.fillStyle = darken(ink, 0.55);
-    ctx.font = `500 34px ${sans}`;
-    ctx.fillText(fit(ctx, caption, w.width), w.left, w.top - 6 + lines.length * 70 + 14);
-    ctx.globalAlpha = 190 / 255;
-    ctx.font = `400 28px ${sans}`;
-    if ('letterSpacing' in ctx) ctx.letterSpacing = '1px';
-    ctx.textBaseline = 'alphabetic';
-    ctx.fillText(fit(ctx, 'Scan the code to open it · SkylineQR', w.width), w.left, w.bottom - 7);
+    lines.forEach((line, i) => ctx.fillText(line, w.left, captionBase - 58 - (lines.length - 1 - i) * 70));
     return card;
   }
 
@@ -271,19 +266,27 @@ const SkylinePage = (() => {
   let postcardFile = null;
 
   /**
-   * Makes the postcard from the code last given (codeBegin, codeModule) and the next frame of the
-   * city ([withPhoto]; none without WebGPU), then shows it with Share and Save.
+   * Makes the postcard from the code last given (codeBegin, codeModule) and, [withPhoto], a frame
+   * of the city drawn for it (startPhoto, at the photo's size; endPhoto puts the screen back; none
+   * without WebGPU), then shows it with Share and Save.
    */
-  async function postcard(title, caption, inkCss, quiet, withPhoto) {
+  async function postcard(title, caption, inkCss, quiet, withPhoto, startPhoto, endPhoto) {
     const button = document.getElementById('postcard');
     if (button.classList.contains('busy')) return;
     button.classList.add('busy');
     document.querySelector('details.more')?.removeAttribute('open');
     try {
-      const date = new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+      const date = new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
+      let shot = Promise.resolve(null);
+      if (withPhoto) {
+        // Drawn at 1.5 times the frame, for a crisp city once it is scaled into the card.
+        const f = postcardLayout(code.n, quiet).photo;
+        startPhoto(Math.round(f.width * 1.5), Math.round(f.height * 1.5));
+        shot = SkylineGpu.snapshot().finally(() => endPhoto());
+      }
       const [photo] = await Promise.all([
-        withPhoto ? SkylineGpu.snapshot() : Promise.resolve(null),
-        document.fonts ? Promise.all(['700 60px Inter', '500 34px Inter', '400 28px Inter'].map((f) => document.fonts.load(f))).catch(() => {}) : null,
+        shot,
+        document.fonts ? Promise.all(['700 60px Inter', '500 34px Inter'].map((f) => document.fonts.load(f))).catch(() => {}) : null,
       ]);
       const card = drawPostcard(photo, quiet, title, `${caption} · ${date}`, inkCss);
       const blob = await new Promise((resolve, reject) => card.toBlob((b) => (b ? resolve(b) : reject(new Error('no image'))), 'image/png'));
@@ -291,7 +294,9 @@ const SkylinePage = (() => {
       postcardUrl = URL.createObjectURL(blob);
       postcardFile = new File([blob], 'skyline-qr-postcard.png', { type: 'image/png' });
       document.getElementById('postcard-image').src = postcardUrl;
-      document.getElementById('postcard-share').hidden = !(navigator.canShare && navigator.canShare({ files: [postcardFile] }));
+      // Share where the browser can share files; elsewhere Save does it.
+      const canShare = !!(navigator.canShare && navigator.canShare({ files: [postcardFile] }));
+      document.getElementById('postcard-share').hidden = !canShare;
       document.getElementById('postcard-dialog').showModal();
     } catch (e) {
       console.warn('SkylineQR postcard:', e);
@@ -312,7 +317,7 @@ const SkylinePage = (() => {
       const outside = e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
       if (e.target === dialog && outside) dialog.close();
     });
-    document.getElementById('postcard-save').addEventListener('click', () => {
+    const save = () => {
       if (!postcardUrl) return;
       const a = document.createElement('a');
       a.href = postcardUrl;
@@ -320,13 +325,19 @@ const SkylinePage = (() => {
       document.body.append(a);
       a.click();
       a.remove();
-    });
+    };
+    document.getElementById('postcard-save').addEventListener('click', save);
+    // Share opens the system's share sheet; where the browser refuses (no file sharing, or no
+    // longer counting the tap), the postcard is saved instead, so the button always does something.
     document.getElementById('postcard-share').addEventListener('click', async () => {
       if (!postcardFile) return;
       try {
-        await navigator.share({ files: [postcardFile], title: 'A city from Skyline QR' });
+        if (!(navigator.canShare && navigator.canShare({ files: [postcardFile] }))) throw new Error('no file sharing');
+        await navigator.share({ files: [postcardFile] });
       } catch (e) {
-        if (e.name !== 'AbortError') console.warn('SkylineQR share:', e);
+        if (e.name === 'AbortError') return;
+        console.warn('SkylineQR share:', e);
+        save();
       }
     });
   }

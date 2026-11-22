@@ -591,13 +591,21 @@ Added 2026-11-21, at the user's request ("make this app into a website").
   a press and springs back, eases between states and pops as it becomes the chosen one, and the
   sheet, the controls and the Stop button ease in (none of it with reduced motion). The sign board
   starts with 马大牛逼 alone.
-- The postcard (2026-11-22, at the user's request, as the app's): "Share as a postcard" in the
-  sheet draws the app's 1080 by 1350 layout (page.js mirrors `ui/Postcard.kt`; keep them in step)
-  with the link as its title, from the next frame read back with copyTextureToBuffer (gpu.js
-  `snapshot`); showing the code, the city stands up at once first, and without WebGPU the frame
-  shows the code alone. It opens in a preview with Save (a PNG download) and, where the browser can
-  share files (`navigator.canShare`), Share, which opens the system share sheet. The preview's own
-  buttons give Share a fresh tap, which Safari needs after the wait for the frame.
+- The postcard (2026-11-22, at the user's request, after the app's; revised the same day at the
+  user's request): "Share as a postcard" in the sheet draws a 1080 by 1350 card (page.js; the
+  app's `ui/Postcard.kt` keeps its own layout). The city is photographed for it: for a frame or
+  two the canvas is drawn at the photo's shape (1.5 times its size on the card) from the city's
+  own angle, whatever the person has turned or zoomed, with no lens shift, so the city sits in the
+  middle, and with no sky behind it, on the paper (`WebRenderer.startPhoto`, gpu.js `photoMode`);
+  the photo's own corner colour becomes the card's, so the photo has no edge. Beneath: the link and
+  "Kuala Lumpur · the date", and the code in the corner, its quiet zone on the card's paper. No
+  hour, no "Scan the code" line. Showing the code, the city stands up at once first; without WebGPU
+  the frame holds the code alone, large, on the paper. The photo is copied from the WebGPU canvas
+  in the same task as its frame (`snapshot`), with copyTextureToBuffer as a fallback: Chrome's
+  mapAsync could reject ("A valid external Instance reference no longer exists"), which left the
+  first version's button doing nothing. It opens in a preview with Save (a PNG download) and, where
+  the browser can share files (`navigator.canShare`), Share, which opens the system share sheet
+  and saves instead if the browser refuses.
 - WebGPU is tried only where it can't take the tab down: Firefox-based browsers (Zen among them)
   get the flat code unless opened with `?webgpu=1`, because their WebGPU crashed the page; a
   request that hangs, or a first frame that never finishes, also falls back. Without WebGPU, the flat code on a

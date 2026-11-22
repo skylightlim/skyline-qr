@@ -29,6 +29,12 @@ const SkylineGpu = (() => {
   let proving = false;
   /** Waiting for the next frame's pixels, for the postcard: [resolve, reject]. */
   let snapshotWanted = null;
+  /** Drawing the postcard's photo: the city on the clear colour, with no sky behind it. */
+  let photo = false;
+
+  function photoMode(on) {
+    photo = on;
+  }
 
   function failNow(message) {
     if (failed) return;
@@ -354,8 +360,10 @@ const SkylineGpu = (() => {
       depthStencilAttachment: { view: targets.depthView, depthLoadOp: 'clear', depthStoreOp: 'discard', depthClearValue: 1 },
     });
     pass.setBindGroup(0, res.sceneGroup);
-    pass.setPipeline(pipes.sky);
-    pass.draw(3);
+    if (!photo) {
+      pass.setPipeline(pipes.sky);
+      pass.draw(3);
+    }
     if (city) {
       pass.setPipeline(pipes.blocks);
       drawBlocks(pass, count, moving, indexCount);
@@ -391,7 +399,7 @@ const SkylineGpu = (() => {
     screenPass(encoder, screen.createView(), pipes.composite, targets.compositeGroup, false);
     const readback = snapshotWanted ? copyOut(encoder, screen) : null;
     device.queue.submit([encoder.finish()]);
-    if (readback) finishSnapshot(readback);
+    if (readback) finishSnapshot(readback, grab(screen.width, screen.height));
     if (!proven && !proving) {
       // The first frame proves WebGPU works here; one that never finishes means it doesn't.
       proving = true;
@@ -407,9 +415,11 @@ const SkylineGpu = (() => {
   }
 
   /**
-   * The next frame as it shows on screen, for the postcard: resolves to a 2D canvas of it. Read
-   * back with copyTextureToBuffer rather than drawn from the canvas, which a WebGPU canvas may have
-   * cleared by the time a 2D context looks.
+   * The next frame as it shows on screen, for the postcard: resolves to a 2D canvas of it. It is
+   * copied from the WebGPU canvas in the same task as the frame is drawn, while the canvas still
+   * holds it; where that comes out empty, the frame is read back with copyTextureToBuffer instead.
+   * (The read back alone failed in Chrome, 2026-11-22: its mapAsync could reject with "A valid
+   * external Instance reference no longer exists".)
    */
   function snapshot() {
     if (!device || failed || !proven) return Promise.reject(new Error('no city to photograph'));
@@ -430,8 +440,29 @@ const SkylineGpu = (() => {
     return { buffer, w, h, bytesPerRow, bgra: texture.format.startsWith('bgra'), wanted };
   }
 
-  async function finishSnapshot({ buffer, w, h, bytesPerRow, bgra, wanted }) {
+  /** The canvas as it stands now, on a 2D canvas; null if it comes out empty. */
+  function grab(w, h) {
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(context.canvas, 0, 0);
+      // An opaque canvas always has alpha; an empty copy has none.
+      const probe = ctx.getImageData(w >> 1, h >> 1, 1, 1).data;
+      return probe[3] === 0 ? null : canvas;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  async function finishSnapshot({ buffer, w, h, bytesPerRow, bgra, wanted }, grabbed) {
     const [resolve, reject] = wanted;
+    if (grabbed) {
+      buffer.destroy();
+      resolve(grabbed);
+      return;
+    }
     try {
       await buffer.mapAsync(GPUMapMode.READ);
       const src = new Uint8Array(buffer.getMappedRange());
@@ -496,6 +527,6 @@ const SkylineGpu = (() => {
     return widths.join(',');
   }
 
-  return { start, resize, uploadCity, writeFrame, writeTraffic, draw, drawAtlas, snapshot };
+  return { start, resize, photoMode, uploadCity, writeFrame, writeTraffic, draw, drawAtlas, snapshot };
 })();
 globalThis.SkylineGpu = SkylineGpu;
