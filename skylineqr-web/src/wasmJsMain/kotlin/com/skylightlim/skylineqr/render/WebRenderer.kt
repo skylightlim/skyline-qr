@@ -208,8 +208,9 @@ internal class WebRenderer(
     }
   }
 
-  fun setFlat(flat: Boolean) {
-    if (calm) morph.finish(flat) else morph.aim(flat, Browser.nanos())
+  /** [instantly] skips the morph, as the postcard does when it stands the city up for its photo. */
+  fun setFlat(flat: Boolean, instantly: Boolean = false) {
+    if (calm || instantly) morph.finish(flat) else morph.aim(flat, Browser.nanos())
     // A meteor, a bolt or fireworks only ever happen over the city, never the code.
     if (flat) {
       meteorAt = -1f
