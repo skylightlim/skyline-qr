@@ -34,6 +34,12 @@ import kotlin.math.min
  *
  * The renderer gets every ink from [ink] through its frame uniform, for the towers and the code
  * alike, so the screen shows exactly what the tests scan.
+ *
+ * Grey blue (2026-11-22, at the user's request: "make the city in grey, blueish, not this colourful
+ * option") is a second set of the same [INKS] inks, picked in [CityColours]: slate, smoke, dusk,
+ * denim, steel, storm and mist, on the same two brightnesses and solved the same way, so the
+ * same modules take the same index and the code scans the same. Presentation only, like the hour:
+ * the city, its districts and its identity do not change.
  */
 object FlatColours {
 
@@ -64,6 +70,19 @@ object FlatColours {
       0x605677, 0x3A4972, 0x26547C, 0x335687, 0x26686D, 0x1E7A6D, 0x3D8E33, 0x3A7728,
     )
   const val HUES = 7
+
+  /**
+   * The grey blue inks (2026-11-22), two shades a hue in the same places as [PANTONE]'s, so each
+   * of Kuala Lumpur's districts keeps a shade of its own: the square slate (where red is), the
+   * accents a smoky silver and a dusky lilac grey, the supertall denim, the mall and the twins steel
+   * blue, the tower a storm blue leaning to teal, the gardens a misty blue grey. The first shade
+   * of each is the bluer one.
+   */
+  private val GREY_BLUE =
+    intArrayOf(
+      0x586478, 0x646972, 0x66626F, 0x5A6266, 0x5D5E7E, 0x62637A, 0x4A5F8C,
+      0x545C90, 0x3F6585, 0x4A6680, 0x3E6A78, 0x4C6A73, 0x52747A, 0x5F6E73,
+    )
 
   /** How many inks there are: each hue in two shades. */
   const val INKS = HUES * 2
@@ -116,13 +135,20 @@ object FlatColours {
   /** How many tones [recipe]'s districts give: two each, a tower's own and its paler one. */
   fun tones(recipe: MaterialRecipe) = recipe.districts * 2
 
-  private val SOLVED = Array(INKS) { i -> solve(FloatArray(3) { k -> ((PANTONE[i] shr (16 - 8 * k)) and 0xFF) / 255f }) }
+  private fun solved(colours: IntArray) = Array(INKS) { i -> solve(FloatArray(3) { k -> ((colours[i] shr (16 - 8 * k)) and 0xFF) / 255f }) }
+
+  private val SOLVED = solved(PANTONE)
+  private val SOLVED_GREY_BLUE = solved(GREY_BLUE)
 
   /**
-   * Ink [index]: its hue (index / 2) in its first or second Pantone shade, on the inks' two
+   * Ink [index] in [colours]: its hue (index / 2) in its first or second shade, on the inks' two
    * brightnesses. The same array every time; do not write to it.
    */
-  fun ink(index: Int): FloatArray = SOLVED[index]
+  fun ink(index: Int, colours: CityColours = CityColours.COLOURFUL): FloatArray =
+    when (colours) {
+      CityColours.COLOURFUL -> SOLVED[index]
+      CityColours.GREY_BLUE -> SOLVED_GREY_BLUE[index]
+    }
 
   /**
    * [c] as close to itself as it can be with ZXing's luma exactly [INK_LUMA] and BT.601's within
@@ -282,16 +308,17 @@ object FlatColours {
     return out
   }
 
-  /** Module ([col], [row]) of [city]'s flat code under [air]; outside the code, the quiet zone's paper. */
-  fun module(city: City, col: Int, row: Int, air: Atmosphere): FloatArray {
+  /** Module ([col], [row]) of [city]'s flat code under [air], in [colours]; outside the code, the quiet zone's paper. */
+  fun module(city: City, col: Int, row: Int, air: Atmosphere, colours: CityColours = CityColours.COLOURFUL): FloatArray {
     val n = city.modules
     if (col !in 0 until n || row !in 0 until n) return paper(air)
     val i = row * n + col
-    return if (city.qr.isDark(col, row)) ink(city.inks[i]) else paper(city.tones[i], air)
+    return if (city.qr.isDark(col, row)) ink(city.inks[i], colours) else paper(city.tones[i], air)
   }
 
   /** The flat code at the point ([x], [y]) in modules from its top left: square modules, as drawn. */
-  fun at(city: City, x: Float, y: Float, air: Atmosphere): FloatArray = module(city, floor(x).toInt(), floor(y).toInt(), air)
+  fun at(city: City, x: Float, y: Float, air: Atmosphere, colours: CityColours = CityColours.COLOURFUL): FloatArray =
+    module(city, floor(x).toInt(), floor(y).toInt(), air, colours)
 
   fun luma(c: FloatArray) = 0.2126f * c[0] + 0.7152f * c[1] + 0.0722f * c[2]
 

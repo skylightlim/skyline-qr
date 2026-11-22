@@ -37,6 +37,7 @@ Nothing to install or sign up for. There is also an [Android app](#the-android-a
 The settings button (the sliders, bottom right) holds the extras:
 
 - **Weather:** clear skies, a storm with rain and lightning, or a haze that rolls in.
+- **City colours:** the colourful city, or a quiet grey blue one. Both scan the same.
 - **Long press:** choose a meteor or fireworks.
 - **Clouds:** turn the clouds on or off.
 - **Timelapse:** watch the city go from midday to night in fifteen seconds, with shadows
@@ -106,7 +107,7 @@ flat 2D code takes its place. See [docs/DESIGN.md](docs/DESIGN.md) for the full 
 // settings.gradle.kts
 dependencyResolutionManagement { repositories { maven("https://jitpack.io") } }
 // build.gradle.kts
-implementation("com.github.skylightlim.skyline-qr:skylineqr-compose:v1.0.0")
+implementation("com.github.skylightlim.skyline-qr:skylineqr-compose:v1.1.0")
 ```
 
 ```kotlin

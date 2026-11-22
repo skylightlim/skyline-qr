@@ -39,7 +39,17 @@ internal object Dom {
   fun codeBegin(modules: Int, paper: String) = jsCodeBegin(modules, paper)
   fun codeModule(col: Int, row: Int, color: String) = jsCodeModule(col, row, color)
   fun codeDraw(canvas: String, quiet: Int) = jsCodeDraw(canvas, quiet)
+
+  /**
+   * Makes the postcard from the code last given and, [withPhoto], a frame of the city that
+   * [startPhoto] asks for at the photo's size in pixels; [endPhoto] follows it (page.js).
+   */
+  fun postcard(title: String, caption: String, ink: String, quiet: Int, withPhoto: Boolean, startPhoto: (Int, Int) -> Unit, endPhoto: () -> Unit) =
+    jsPostcard(title, caption, ink, quiet, withPhoto, startPhoto, endPhoto)
 }
+
+@JsFun("(t, c, i, q, p, s, e) => { SkylinePage.postcard(t, c, i, q, p, (w, h) => s(w, h), () => e()); }")
+private external fun jsPostcard(title: String, caption: String, ink: String, quiet: Int, withPhoto: Boolean, startPhoto: (Int, Int) -> Unit, endPhoto: () -> Unit)
 
 @JsFun("(id) => document.getElementById(id).value")
 private external fun jsValue(id: String): String

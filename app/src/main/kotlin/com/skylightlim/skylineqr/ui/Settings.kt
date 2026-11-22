@@ -78,16 +78,21 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.skylightlim.skylineqr.R
+import com.skylightlim.skylineqr.city.CityColours
 import com.skylightlim.skylineqr.compose.LongPress
 
 /**
  * What the app keeps on the phone (2026-11-09): whether the clouds show, what a long press on the
- * city does, and the sign board's messages. Settings, not views, so they outlive the app.
+ * city does, the sign board's messages and, since 2026-11-22, the city's colours. Settings, not
+ * views, so they outlive the app.
  */
 internal class AppSettings(context: Context) {
   private val prefs = context.getSharedPreferences("skylineqr", Context.MODE_PRIVATE)
 
   var clouds by mutableStateOf(prefs.getBoolean(CLOUDS, true))
+    private set
+
+  var colours by mutableStateOf(CityColours.entries.firstOrNull { it.name == prefs.getString(COLOURS, null) } ?: CityColours.COLOURFUL)
     private set
 
   var longPress by mutableStateOf(LongPress.entries.firstOrNull { it.name == prefs.getString(LONG_PRESS, null) } ?: LongPress.METEOR)
@@ -99,6 +104,11 @@ internal class AppSettings(context: Context) {
   fun clouds(on: Boolean) {
     clouds = on
     prefs.edit().putBoolean(CLOUDS, on).apply()
+  }
+
+  fun colours(choice: CityColours) {
+    colours = choice
+    prefs.edit().putString(COLOURS, choice.name).apply()
   }
 
   fun longPress(choice: LongPress) {
@@ -113,6 +123,7 @@ internal class AppSettings(context: Context) {
 
   companion object {
     private const val CLOUDS = "clouds"
+    private const val COLOURS = "colours"
     private const val LONG_PRESS = "longPress"
     private const val SIGNS = "signs"
 
@@ -173,12 +184,19 @@ private enum class Page { MAIN, SIGNS, LICENCES }
 
 /**
  * The settings card (2026-11-09, at the user's request), over the city like the new-card popup and
- * opening out of the same corner: take the tour or the timelapse, what a long press does, the clouds, the sign
+ * opening out of the same corner: take the tour or the timelapse, share the city as a postcard, the
+ * city's colours, what a long press does, the clouds, the sign
  * board's messages (a page of their own) and the licences (another). No title: the tour comes
  * first. A tap anywhere outside the card closes it; back steps out of a page first.
  */
 @Composable
-internal fun SettingsCard(settings: AppSettings, onTour: () -> Unit, onTimelapse: () -> Unit, onDismiss: () -> Unit) {
+internal fun SettingsCard(
+  settings: AppSettings,
+  onTour: () -> Unit,
+  onTimelapse: () -> Unit,
+  onPostcard: () -> Unit,
+  onDismiss: () -> Unit,
+) {
   var page by rememberSaveable { mutableStateOf(Page.MAIN) }
   val motion = MaterialTheme.motionScheme
   val colours = MaterialTheme.colorScheme
@@ -221,7 +239,7 @@ internal fun SettingsCard(settings: AppSettings, onTour: () -> Unit, onTimelapse
           label = "settings page",
         ) { shown ->
           when (shown) {
-            Page.MAIN -> MainPage(settings, onTour, onTimelapse, open = { page = it })
+            Page.MAIN -> MainPage(settings, onTour, onTimelapse, onPostcard, open = { page = it })
             Page.SIGNS -> SignsPage(settings, back = { page = Page.MAIN })
             Page.LICENCES -> LicencesPage(back = { page = Page.MAIN })
           }
@@ -232,7 +250,7 @@ internal fun SettingsCard(settings: AppSettings, onTour: () -> Unit, onTimelapse
 }
 
 @Composable
-private fun MainPage(settings: AppSettings, onTour: () -> Unit, onTimelapse: () -> Unit, open: (Page) -> Unit) {
+private fun MainPage(settings: AppSettings, onTour: () -> Unit, onTimelapse: () -> Unit, onPostcard: () -> Unit, open: (Page) -> Unit) {
   Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
     // The tour, and beside it the timelapse (2026-11-20, at the user's request): the city from day
     // to night in fifteen seconds. The tour stays the filled one and takes the room it needs.
@@ -261,6 +279,20 @@ private fun MainPage(settings: AppSettings, onTour: () -> Unit, onTimelapse: () 
         Spacer(Modifier.size(ButtonDefaults.IconSpacing))
         Text("Timelapse", style = MaterialTheme.typography.titleMedium)
       }
+    }
+    // The city as a postcard (2026-11-22, at the user's request), through the share sheet.
+    SettingRow(SkylineIcons.Share, "Share as a postcard", note = "The city as it looks now, with its code", onClick = onPostcard)
+    // The city's colours (2026-11-22, at the user's request): the colourful inks or quiet grey blue.
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+      Text("City colours", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp))
+      PillChoices(
+        CityColours.entries,
+        settings.colours,
+        settings::colours,
+        label = { if (it == CityColours.COLOURFUL) "Colourful" else "Grey blue" },
+        modifier = Modifier.fillMaxWidth(),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+      )
     }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
       Text("Long press on the city", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp))

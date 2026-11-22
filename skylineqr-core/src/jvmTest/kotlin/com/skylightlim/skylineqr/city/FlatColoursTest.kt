@@ -20,7 +20,7 @@ import org.junit.Test
 /**
  * The coloured flat code scans: every material recipe, at every fixed hour and through the clock,
  * in every weather, drawn small and large, read by ZXing with its own luma formula and with the
- * camera's BT.601. The device test proves the same of real rendered frames; this one covers far
+ * camera's BT.601, in the colourful inks and the grey blue ones. The device test proves the same of real rendered frames; this one covers far
  * more combinations, fast. Set SKYLINEQR_PREVIEW to a directory to also get contact sheets.
  */
 class FlatColoursTest {
@@ -47,10 +47,10 @@ class FlatColoursTest {
 
   @Test
   fun anyTwoInksCanTouchAndAnyTwoPapers() {
-    for ((label, air) in airs) {
-      val inks = (0 until FlatColours.INKS).map { FlatColours.ink(it) }
+    for ((label, air) in airs) for (colours in CityColours.entries) {
+      val inks = (0 until FlatColours.INKS).map { FlatColours.ink(it, colours) }
       for ((i, ink) in inks.withIndex()) {
-        val where = "$label ink $i"
+        val where = "$label $colours ink $i"
         assertEquals(where, FlatColours.INK_LUMA, FlatColours.lumaZxing(ink), 1e-4f)
         // Well under the paper, to the camera as well.
         assertTrue(where, FlatColours.luma601(ink) < 0.45f)
@@ -90,6 +90,30 @@ class FlatColoursTest {
     val hues = first.map { hue(it) }.sorted()
     val distinct = hues.fold(mutableListOf<Float>()) { kept, x -> if (kept.none { apart(it, x) < 20f }) kept += x; kept }
     assertTrue("only ${distinct.size} distinct hues: $hues", distinct.size >= 5)
+  }
+
+  @Test
+  fun theGreyBlueInksAreQuiet() {
+    // 2026-11-22, at the user's request: "the city in grey, blueish, not this colourful option".
+    // Every ink a blue or a blue grey (cyan through to a lilac grey, no warm hue), muted, and never
+    // quite a flat grey; each hue's two shades, and the hues Kuala Lumpur's districts take, still
+    // tell apart.
+    val inks = (0 until FlatColours.INKS).map { FlatColours.ink(it, CityColours.GREY_BLUE) }
+    for ((i, ink) in inks.withIndex()) {
+      val chroma = ink.max() - ink.min()
+      assertTrue("grey blue ink $i is ${hue(ink)} degrees", hue(ink) in 185f..265f)
+      assertTrue("grey blue ink $i is too colourful: $chroma", chroma < 0.27f)
+      assertTrue("grey blue ink $i is a flat grey: $chroma", chroma > 0.03f)
+      // Blue never under red: grey or blue, not warm.
+      assertTrue("grey blue ink $i is warm", ink[2] >= ink[0])
+    }
+    for (h in 0 until FlatColours.HUES) {
+      assertTrue("grey blue hue $h's shades are one colour", (0..2).any { abs(inks[h * 2][it] - inks[h * 2 + 1][it]) > 0.02f })
+    }
+    val districts = intArrayOf(0, 3, 4, 5, 6).map { inks[it * 2] }
+    for ((a, x) in districts.withIndex()) for ((b, y) in districts.withIndex()) {
+      if (a < b) assertTrue("grey blue district hues $a and $b are one colour", (0..2).any { abs(x[it] - y[it]) > 0.03f })
+    }
   }
 
   @Test
@@ -191,13 +215,13 @@ class FlatColoursTest {
   fun theCodeScansInEveryRecipeHourAndWeather() {
     val reader = QRCodeReader()
     val failures = ArrayList<String>()
-    for (city in cities) for ((label, air) in airs) for (modulePx in SCALES) {
-      val image = render(city, air, modulePx)
+    for (city in cities) for ((label, air) in airs) for (modulePx in SCALES) for (colours in CityColours.entries) {
+      val image = render(city, air, modulePx, colours)
       for ((formula, source) in listOf("zxing" to zxing(image), "bt601" to bt601(image))) {
         val text =
           runCatching { reader.decode(BinaryBitmap(HybridBinarizer(source)), mapOf(DecodeHintType.TRY_HARDER to true)).text }
             .getOrNull()
-        if (text != city.identity.link.payload) failures += "${city.materials.name} v${city.qr.symbolVersion} $label ${modulePx}px $formula"
+        if (text != city.identity.link.payload) failures += "${city.materials.name} v${city.qr.symbolVersion} $colours $label ${modulePx}px $formula"
       }
     }
     assertEquals("did not scan:\n" + failures.joinToString("\n"), 0, failures.size)
@@ -208,15 +232,15 @@ class FlatColoursTest {
     val dir = System.getenv("SKYLINEQR_PREVIEW")?.let(::File) ?: return
     dir.mkdirs()
     val px = 6
-    for (city in cities.distinctBy { it.materials.name }) {
+    for (city in cities.distinctBy { it.materials.name }) for (colours in CityColours.entries) {
       val shown = airs.filter { (label, _) -> label.startsWith("AUTO").not() }
       val side = (city.modules + 2 * MARGIN) * px
       val sheet = BufferedImage(side * Weather.entries.size, side * (shown.size / Weather.entries.size), BufferedImage.TYPE_INT_RGB)
       shown.forEachIndexed { i, (_, air) ->
-        val tile = render(city, air, px.toFloat())
+        val tile = render(city, air, px.toFloat(), colours)
         sheet.graphics.drawImage(tile, (i % Weather.entries.size) * side, (i / Weather.entries.size) * side, null)
       }
-      ImageIO.write(sheet, "png", File(dir, "${city.materials.name.replace(' ', '-')}.png"))
+      ImageIO.write(sheet, "png", File(dir, "${city.materials.name.replace(' ', '-')}-$colours.png"))
     }
   }
 
@@ -229,7 +253,7 @@ class FlatColoursTest {
    * The flat view as the renderer frames it: the code's square modules on a screen of the hour's
    * paper. Supersampled, so edges blend as they do under MSAA.
    */
-  private fun render(city: City, air: Atmosphere, modulePx: Float): BufferedImage {
+  private fun render(city: City, air: Atmosphere, modulePx: Float, colours: CityColours = CityColours.COLOURFUL): BufferedImage {
     val n = city.modules
     val side = ((n + 2 * MARGIN) * modulePx).toInt()
     val image = BufferedImage(side, side, BufferedImage.TYPE_INT_RGB)
@@ -243,7 +267,7 @@ class FlatColoursTest {
         val my = (y + (sy + 0.5f) / sub) / modulePx - MARGIN
         val c =
           when {
-            mx >= 0f && my >= 0f && mx < n && my < n -> FlatColours.at(city, mx, my, air)
+            mx >= 0f && my >= 0f && mx < n && my < n -> FlatColours.at(city, mx, my, air, colours)
             else -> air.paper
           }
         r += c[0]

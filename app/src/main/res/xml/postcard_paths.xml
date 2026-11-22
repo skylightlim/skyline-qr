@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The postcard's folder under the cache, for Postcard.share's FileProvider. -->
+<paths>
+    <cache-path name="postcards" path="postcards/" />
+</paths>

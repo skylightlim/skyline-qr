@@ -71,9 +71,10 @@ internal object Camera {
 
   /**
    * The city's pose, turned by [view]. The person's orbit and zoom fade out as the city flattens,
-   * so the code always lands square to the screen and filling it.
+   * so the code always lands square to the screen and filling it. [lift] false leaves the city in
+   * the middle of the frame, with no controls to clear (the website's postcard photo).
    */
-  fun pose(city: City?, aspect: Float, eased: Float, time: Float, view: View = View()): Pose {
+  fun pose(city: City?, aspect: Float, eased: Float, time: Float, view: View = View(), lift: Boolean = true): Pose {
     val half = (city?.plateHalf ?: 20f) * (FLAT_HALF_FIT + (CITY_HALF_FIT - FLAT_HALF_FIT) * (1f - eased))
     val yaw = (BASE_YAW + view.yaw + 0.06f * sin(time * 0.25f)) * (1f - eased)
     val elevation = BASE_ELEVATION + view.elevation + (FLAT_ELEVATION - BASE_ELEVATION - view.elevation) * eased
@@ -84,7 +85,7 @@ internal object Camera {
     val distance = fit * (1.18f + (FLAT_DISTANCE - 1.18f) * eased) / zoom
     val targetY = (city?.maxHeight ?: 4f) * 0.40f * (1f - eased)
     // Lift the composition clear of the controls underneath it.
-    val shiftY = CITY_SHIFT - 0.12f * eased
+    val shiftY = if (lift) CITY_SHIFT - 0.12f * eased else 0f
     val eye =
       floatArrayOf(
         distance * cos(elevation) * sin(yaw),

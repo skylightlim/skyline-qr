@@ -31,6 +31,16 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
+        <!-- The postcard: the share sheet's chosen app reads the image from the cache, and nothing else can. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.postcards"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/postcard_paths" />
+        </provider>
     </application>
 
 </manifest>

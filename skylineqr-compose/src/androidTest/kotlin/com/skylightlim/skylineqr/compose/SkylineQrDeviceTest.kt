@@ -14,6 +14,7 @@ import com.google.zxing.DecodeHintType
 import com.google.zxing.RGBLuminanceSource
 import com.google.zxing.common.HybridBinarizer
 import com.google.zxing.qrcode.QRCodeReader
+import com.skylightlim.skylineqr.city.CityColours
 import com.skylightlim.skylineqr.city.CityPreset
 import com.skylightlim.skylineqr.city.TimeOfDay
 import com.skylightlim.skylineqr.city.Weather
@@ -46,11 +47,15 @@ class SkylineQrDeviceTest {
     var city by mutableStateOf(CityPreset.GENERIC)
     var time by mutableStateOf(TimeOfDay.DAY)
     var weather by mutableStateOf(Weather.CLEAR)
-    compose.setContent { SkylineQrCode(url, Modifier.fillMaxSize(), city = city, time = time, weather = weather, state = state) }
+    var colours by mutableStateOf(CityColours.COLOURFUL)
+    compose.setContent { SkylineQrCode(url, Modifier.fillMaxSize(), city = city, time = time, weather = weather, colours = colours, state = state) }
     compose.waitUntil(15_000) { state.identity != null }
 
-    for (c in CityPreset.entries) {
-      compose.runOnIdle { city = c }
+    for (c in CityPreset.entries) for (inks in CityColours.entries) {
+      compose.runOnIdle {
+        city = c
+        colours = inks
+      }
       compose.waitUntil(15_000) { state.city?.preset == c }
       for (t in TimeOfDay.entries - TimeOfDay.AUTO) {
         for (w in Weather.entries) {
@@ -60,9 +65,9 @@ class SkylineQrDeviceTest {
           }
           compose.waitForIdle()
           val shot = snapshot(state)
-          keep(shot, "$c-$t-$w")
+          keep(shot, "$c-$inks-$t-$w")
           assertFalse("WebGPU fell back to the 2D code", state.fallback)
-          assertEquals("$c $t $w", Link.parse(url).payload, decode(shot))
+          assertEquals("$c $inks $t $w", Link.parse(url).payload, decode(shot))
         }
       }
     }
